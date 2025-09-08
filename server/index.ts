@@ -67,5 +67,20 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    // Display public URL for Replit
+    const replitUrl = process.env.REPLIT_URL;
+    const replOwner = process.env.REPL_OWNER;
+    const replSlug = process.env.REPL_SLUG;
+    
+    if (replitUrl) {
+      console.log(`\n🌐 Public URL: ${replitUrl}`);
+    } else if (replOwner && replSlug) {
+      console.log(`\n🌐 Public URL: https://${replSlug}.${replOwner}.repl.co`);
+    } else {
+      console.log(`\n🌐 Server running locally on port ${port}`);
+      console.log(`   Local URL: http://localhost:${port}`);
+    }
+    console.log(`\n✅ MiniChat application is ready!\n`);
   });
 })();
