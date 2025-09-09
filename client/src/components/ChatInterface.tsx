@@ -313,7 +313,7 @@ export function ChatInterface({
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1">
           <MessageList messages={messages} currentUserEmail={user.email} />
         </div>
 
