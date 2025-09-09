@@ -126,7 +126,10 @@ export function ChatInterface({
   };
 
   const handleBanUser = async (email: string, reason: string) => {
-    await socketManager.banUser(email, reason);
+    const response = await socketManager.banUser(email, reason);
+    if (!response.ok) {
+      throw new Error(response.err || 'Failed to ban user');
+    }
   };
 
   const handleUnbanUser = async (email: string) => {

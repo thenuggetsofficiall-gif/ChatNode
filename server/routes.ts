@@ -261,6 +261,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reason = String(data.reason || 'No reason provided').slice(0, 1000);
       if (!targetEmail) return cb && cb({ ok: false });
 
+      // Prevent banning the owner
+      if (targetEmail === OWNER_EMAIL.toLowerCase()) {
+        return cb && cb({ ok: false, err: 'cannot-ban-owner' });
+      }
+
       bans[targetEmail] = { reason, issuer: user.email, ts: Date.now() };
       saveAll();
 

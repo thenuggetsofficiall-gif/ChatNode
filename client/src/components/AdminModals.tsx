@@ -89,10 +89,14 @@ export function AdminModals({
         title: "User Banned",
         description: `${banEmail} has been banned`
       });
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = "Failed to ban user";
+      if (error.message && error.message.includes('cannot-ban-owner')) {
+        errorMessage = "Cannot ban the owner";
+      }
       toast({
         title: "Error",
-        description: "Failed to ban user",
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -133,7 +137,7 @@ export function AdminModals({
                       scrollbarColor: '#9ca3af #f3f4f6'
                     }}
                   >
-                    <div className="text-sm whitespace-nowrap min-w-max">{log.text}</div>
+                    <div className="text-sm whitespace-nowrap min-w-max text-white">{log.text}</div>
                   </div>
                   <div className="flex space-x-2 flex-shrink-0">
                     <Button 
@@ -148,7 +152,9 @@ export function AdminModals({
                       size="sm" 
                       variant="outline"
                       onClick={() => handleBan(log.email)}
+                      disabled={log.role === 'owner'}
                       data-testid={`button-ban-${index}`}
+                      className={log.role === 'owner' ? 'opacity-50 cursor-not-allowed' : ''}
                     >
                       <Ban className="h-3 w-3 text-red-500" />
                     </Button>
