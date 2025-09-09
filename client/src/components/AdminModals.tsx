@@ -118,15 +118,17 @@ export function AdminModals({
                   className="flex items-center space-x-4 p-3 rounded-lg border border-border hover:bg-muted/30"
                   data-testid={`log-entry-${index}`}
                 >
-                  <div className="text-xs text-muted-foreground w-20">
+                  <div className="text-xs text-muted-foreground w-20 flex-shrink-0">
                     {formatTime(log.ts)}
                   </div>
-                  <div className="text-xs text-muted-foreground w-16">
+                  <div className="text-xs text-muted-foreground w-16 flex-shrink-0">
                     #{log.room}
                   </div>
-                  <div className="text-xs font-mono w-24">{log.display}</div>
-                  <div className="flex-1 text-sm truncate">{log.text}</div>
-                  <div className="flex space-x-2">
+                  <div className="text-xs font-mono w-24 flex-shrink-0">{log.display}</div>
+                  <div className="flex-1 overflow-x-auto">
+                    <div className="text-sm whitespace-nowrap pr-4 min-w-0">{log.text}</div>
+                  </div>
+                  <div className="flex space-x-2 flex-shrink-0">
                     <Button 
                       size="sm" 
                       variant="outline"
