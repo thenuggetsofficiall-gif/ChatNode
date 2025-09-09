@@ -21,11 +21,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const OWNER_EMAIL = process.env.OWNER_EMAIL || 'caydenshoults32@wsdr4.org';
   const DATA_DIR = path.join(process.cwd(), 'data');
 
-  // Ensure data directory exists
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
   // Helper to load/save JSON
-  function loadJSON(filename: string, fallback: any) {
+  const loadJSON = (filename: string, fallback: any) => {
     const p = path.join(DATA_DIR, filename);
     if (!fs.existsSync(p)) {
       fs.writeFileSync(p, JSON.stringify(fallback || {} , null, 2));
@@ -37,10 +34,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('JSON load error', filename, e);
       return fallback || {};
     }
-  }
-  function saveJSON(filename: string, obj: any) {
-    const p = path.join(DATA_DIR, filename);
-    fs.writeFileSync(p, JSON.stringify(obj, null, 2));
+  };
+  
+  const saveJSON = (filename: string, obj: any) => {
+    try {
+      const p = path.join(DATA_DIR, filename);
+      fs.writeFileSync(p, JSON.stringify(obj, null, 2));
+    } catch (error) {
+      console.error(`❌ Failed to save ${filename}:`, error);
+    }
+  };
+
+  // Ensure data directory exists with error handling
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      console.log(`📁 Created data directory: ${DATA_DIR}`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to create data directory:', error);
+    throw new Error(`Cannot create data directory: ${DATA_DIR}`);
   }
 
   // Data structures persisted to files
@@ -52,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let bans = loadJSON('bans.json', {});
   let adminList = loadJSON('admins.json', { emails: [] });
 
-  function saveAll() {
+  const saveAll = () => {
     saveJSON('users.json', usersByEmail);
     saveJSON('rooms.json', rooms);
     saveJSON('messages.json', messages);
@@ -60,15 +73,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('warnings.json', warnings);
     saveJSON('bans.json', bans);
     saveJSON('admins.json', adminList);
-  }
+  };
 
-  // API routes
+  // API routes with error handling
   app.get('/api/config', (req, res) => {
-    res.json({ ownerEmail: OWNER_EMAIL, admins: adminList.emails, rooms: Object.keys(rooms) });
+    try {
+      res.json({ ownerEmail: OWNER_EMAIL, admins: adminList.emails, rooms: Object.keys(rooms) });
+    } catch (error) {
+      console.error('❌ Error in /api/config:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   app.get('/api/admins', (req, res) => {
-    res.json(adminList.emails);
+    try {
+      res.json(adminList.emails);
+    } catch (error) {
+      console.error('❌ Error in /api/admins:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   // Socket.IO connection handling
