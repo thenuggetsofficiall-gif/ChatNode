@@ -122,7 +122,10 @@ export function ChatInterface({
   };
 
   const handleWarnUser = async (email: string, reason: string) => {
-    await socketManager.warnUser(email, reason);
+    const response = await socketManager.warnUser(email, reason);
+    if (!response.ok) {
+      throw new Error(response.err || 'Failed to warn user');
+    }
   };
 
   const handleBanUser = async (email: string, reason: string) => {

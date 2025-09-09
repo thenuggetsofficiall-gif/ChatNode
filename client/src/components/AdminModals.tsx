@@ -64,10 +64,14 @@ export function AdminModals({
         title: "Warning Sent",
         description: `Warning sent to ${warnEmail}`
       });
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = "Failed to send warning";
+      if (error.message && error.message.includes('cannot-warn-owner')) {
+        errorMessage = "Cannot warn the owner";
+      }
       toast({
         title: "Error",
-        description: "Failed to send warning",
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -144,7 +148,9 @@ export function AdminModals({
                       size="sm" 
                       variant="outline"
                       onClick={() => handleWarn(log.email)}
+                      disabled={log.role === 'owner'}
                       data-testid={`button-warn-${index}`}
+                      className={log.role === 'owner' ? 'opacity-50 cursor-not-allowed' : ''}
                     >
                       <AlertTriangle className="h-3 w-3 text-yellow-500" />
                     </Button>

@@ -148,9 +148,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // attach to socket
         (socket as any).data.user = user;
 
-        // Send any unacknowledged warnings
+        // Send any unacknowledged warnings (only if not expired)
         const userWarnings = warnings[email] || [];
-        const unacked = userWarnings.filter((w: any) => !w.acknowledged);
+        const now = Date.now();
+        const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+        
+        // Filter out expired warnings (older than 1 hour)
+        const validWarnings = userWarnings.filter((w: any) => (now - w.ts) < oneHour);
+        if (validWarnings.length !== userWarnings.length) {
+          warnings[email] = validWarnings;
+          saveAll();
+        }
+        
+        const unacked = validWarnings.filter((w: any) => !w.acknowledged);
         if (unacked.length) {
           // send first unacknowledged
           socket.emit('warning', unacked[0]);
@@ -191,7 +201,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (bans[user.email]) return cb && cb({ ok: false, err: 'banned' });
 
       // Ensure user has acknowledged warnings? We block sending if there's unacked warnings
-      const unacked = (warnings[user.email] || []).some((w: any) => !w.acknowledged);
+      // But first, filter out expired warnings (older than 1 hour)
+      const now = Date.now();
+      const oneHour = 60 * 60 * 1000;
+      const userWarnings = warnings[user.email] || [];
+      const validWarnings = userWarnings.filter((w: any) => (now - w.ts) < oneHour);
+      
+      if (validWarnings.length !== userWarnings.length) {
+        warnings[user.email] = validWarnings;
+        saveAll();
+      }
+      
+      const unacked = validWarnings.some((w: any) => !w.acknowledged);
       if (unacked) return cb && cb({ ok: false, err: 'warning' });
 
       const room = payload.room || 'General';
@@ -222,6 +243,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const targetEmail = (data.email || '').toLowerCase();
       const reason = String(data.reason || 'No reason provided').slice(0, 1000);
       if (!targetEmail) return cb && cb({ ok: false });
+
+      // Prevent warning the owner
+      if (targetEmail === OWNER_EMAIL.toLowerCase()) {
+        return cb && cb({ ok: false, err: 'cannot-warn-owner' });
+      }
 
       if (!warnings[targetEmail]) warnings[targetEmail] = [];
       warnings[targetEmail].push({ reason, issuer: user.email, ts: Date.now(), acknowledged: false });
