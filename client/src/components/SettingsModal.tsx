@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { X, Upload } from "lucide-react";
-import { ObjectUploader } from "@/components/ObjectUploader";
-import type { UploadResult } from '@uppy/core';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -19,29 +17,69 @@ export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }:
   const [username, setUsername] = useState(currentUser?.username || "");
   const [profileImageUrl, setProfileImageUrl] = useState(currentUser?.profileImageUrl || "");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const handleGetUploadParameters = async () => {
-    const response = await fetch('/api/objects/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await response.json();
-    return {
-      method: 'PUT' as const,
-      url: data.uploadURL,
-    };
-  };
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const handleUploadComplete = (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadedFile = result.successful[0];
-      if (uploadedFile.uploadURL) {
-        setProfileImageUrl(uploadedFile.uploadURL);
-        toast({
-          title: "Image Uploaded",
-          description: "Profile picture uploaded successfully"
-        });
+    // Check if it's a PNG file
+    if (!file.type.includes('png')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please select a PNG image file",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // Get upload URL
+      const response = await fetch('/api/objects/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get upload URL');
+      }
+
+      const { uploadURL } = await response.json();
+
+      // Upload file
+      const uploadResponse = await fetch(uploadURL, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type
+        }
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload file');
+      }
+
+      // Set the uploaded file URL
+      setProfileImageUrl(uploadURL);
+      toast({
+        title: "Image Uploaded",
+        description: "Profile picture uploaded successfully"
+      });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: "Failed to upload image. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      // Clear the input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
     }
   };
@@ -115,16 +153,27 @@ export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }:
                   className="w-16 h-16 rounded-full object-cover border-2 border-border"
                 />
               )}
-              <ObjectUploader
-                maxNumberOfFiles={1}
-                maxFileSize={5242880} // 5MB
-                onGetUploadParameters={handleGetUploadParameters}
-                onComplete={handleUploadComplete}
-                buttonClassName="flex items-center gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                <span>Upload Image</span>
-              </ObjectUploader>
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".png,image/png"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  data-testid="input-profile-image"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="flex items-center gap-2"
+                  data-testid="button-upload-image"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>{isUploading ? "Uploading..." : "Upload PNG"}</span>
+                </Button>
+              </div>
             </div>
           </div>
 
