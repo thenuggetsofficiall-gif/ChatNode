@@ -9,6 +9,7 @@ import { MessageList } from './MessageList';
 import { AdminModals } from './AdminModals';
 import { SettingsModal } from './SettingsModal';
 import { BroadcastModal } from './BroadcastModal';
+import { PasswordModal } from './PasswordModal';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useToast } from '@/hooks/use-toast';
 import type { User, Message, MessageLog, Ban, Warning } from '@/types/chat';
@@ -44,6 +45,7 @@ export function ChatInterface({
   const [showSettings, setShowSettings] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [showPasswords, setShowPasswords] = useState(false);
   const [logs, setLogs] = useState<MessageLog[]>([]);
   const [bans, setBans] = useState<Record<string, Ban>>({});
   const [warning, setWarning] = useState<Warning | null>(null);
@@ -214,6 +216,10 @@ export function ChatInterface({
     setShowBroadcast(true);
   };
 
+  const handleOpenPasswords = () => {
+    setShowPasswords(true);
+  };
+
   const handleSendBroadcast = async (message: string) => {
     setBroadcastLoading(true);
     try {
@@ -269,6 +275,7 @@ export function ChatInterface({
         onOpenBans={handleOpenBans}
         onOpenSettings={() => setShowSettings(true)}
         onOpenBroadcast={handleOpenBroadcast}
+        onOpenPasswords={handleOpenPasswords}
       />
 
       {/* Main Chat Area */}
@@ -407,6 +414,13 @@ export function ChatInterface({
         onOpenChange={setShowBroadcast}
         onSendBroadcast={handleSendBroadcast}
         isLoading={broadcastLoading}
+      />
+
+      {/* Password Modal */}
+      <PasswordModal
+        open={showPasswords}
+        onOpenChange={setShowPasswords}
+        socketManager={socketManager}
       />
       </div>
     </div>

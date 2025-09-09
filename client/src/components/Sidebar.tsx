@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Hash, Plus, Settings, List, Ban, Crown, Shield, Megaphone } from 'lucide-react';
+import { Hash, Plus, Settings, List, Ban, Crown, Shield, Megaphone, Lock } from 'lucide-react';
 import type { User } from '@/types/chat';
 
 interface SidebarProps {
@@ -14,6 +14,7 @@ interface SidebarProps {
   onOpenBans: () => void;
   onOpenSettings: () => void;
   onOpenBroadcast?: () => void;
+  onOpenPasswords?: () => void;
 }
 
 export function Sidebar({ 
@@ -25,7 +26,8 @@ export function Sidebar({
   onOpenLogs,
   onOpenBans,
   onOpenSettings,
-  onOpenBroadcast
+  onOpenBroadcast,
+  onOpenPasswords
 }: SidebarProps) {
   const isAdmin = user.role === 'admin' || user.role === 'owner';
 
@@ -151,6 +153,17 @@ export function Sidebar({
               >
                 <Megaphone className="h-4 w-4 mr-2" />
                 Broadcast
+              </Button>
+            )}
+            {user.role === 'owner' && onOpenPasswords && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={onOpenPasswords}
+                data-testid="button-passwords"
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                Passwords
               </Button>
             )}
           </div>
