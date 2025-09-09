@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Crown, Shield, Reply } from 'lucide-react';
@@ -60,19 +59,24 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
   };
 
   return (
-    <div className="flex-1 relative">
-      <ScrollArea 
-        className="absolute inset-0 p-4" 
-        ref={scrollRef}
-        data-testid="scroll-messages"
-      >
-        <div className="space-y-4 min-h-full">
-          {messages.map((message, index) => (
-            <div 
-              key={index} 
-              className="flex space-x-3 hover:bg-muted/30 p-2 rounded-md -mx-2 group"
-              data-testid={`message-${index}`}
-            >
+    <div 
+      className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-full max-h-full" 
+      ref={scrollRef}
+      data-testid="scroll-messages"
+      style={{ 
+        height: '100%',
+        maxHeight: '100%',
+        overflowY: 'auto',
+        overflowX: 'hidden'
+      }}
+    >
+      <div className="space-y-4">
+        {messages.map((message, index) => (
+          <div 
+            key={index} 
+            className="flex space-x-3 hover:bg-muted/30 p-2 rounded-md -mx-2 group"
+            data-testid={`message-${index}`}
+          >
             <Avatar className="h-8 w-8">
               {message.profileImageUrl ? (
                 <AvatarImage 
@@ -125,10 +129,9 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
                 <Reply className="h-3 w-3" />
               </Button>
             </div>
-            </div>
-          ))}
-        </div>
-      </ScrollArea>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
