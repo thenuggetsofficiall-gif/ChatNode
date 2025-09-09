@@ -62,8 +62,11 @@ export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }:
         throw new Error('Failed to upload file');
       }
 
-      // Set the uploaded file URL
-      setProfileImageUrl(uploadURL);
+      // Convert upload URL to object storage path
+      const objectPath = uploadURL.split('/').pop(); // Get the object ID
+      const profileImagePath = `/objects/uploads/${objectPath}`;
+      setProfileImageUrl(profileImagePath);
+      
       toast({
         title: "Image Uploaded",
         description: "Profile picture uploaded successfully"

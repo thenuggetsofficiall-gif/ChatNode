@@ -134,18 +134,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      if (username && username.trim()) {
+      let updated = false;
+      
+      if (username && username.trim() && username.trim() !== user.username) {
         user.username = username.trim();
+        updated = true;
       }
 
-      if (profileImageUrl !== undefined) {
+      if (profileImageUrl !== undefined && profileImageUrl !== user.profileImageUrl) {
         user.profileImageUrl = profileImageUrl;
+        updated = true;
       }
 
-      usersByEmail[email.toLowerCase()] = user;
-      saveAll();
+      if (updated) {
+        usersByEmail[email.toLowerCase()] = user;
+        saveAll();
+        console.log(`✅ Profile updated for ${email}:`, { username: user.username, profileImageUrl: user.profileImageUrl });
+      }
 
-      res.json({ success: true, user });
+      res.json({ success: true, user, updated });
     } catch (error) {
       console.error('❌ Error in /api/profile:', error);
       res.status(500).json({ error: 'Internal server error' });

@@ -2,6 +2,7 @@ export interface User {
   username: string;
   email: string;
   role: 'user' | 'admin' | 'owner';
+  profileImageUrl?: string;
 }
 
 export interface Message {

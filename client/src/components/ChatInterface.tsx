@@ -175,8 +175,14 @@ export function ChatInterface({
         throw new Error('Failed to update profile');
       }
 
-      // Refresh user data
-      window.location.reload();
+      const result = await response.json();
+      
+      // If profile was successfully updated, refresh the page to show changes
+      if (result.success && result.updated) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 500); // Small delay to show success message
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
       throw error;
