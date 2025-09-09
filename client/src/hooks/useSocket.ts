@@ -129,12 +129,31 @@ export function useSocket() {
     switchRoom(room);
   };
 
+  // Convert direct messages to unified format
+  const getUnifiedMessages = () => {
+    if (currentDirectChat) {
+      return (directMessages[currentDirectChat] || []).map(dm => ({
+        id: dm.id,
+        display: dm.fromUser?.username || 'Unknown',
+        text: dm.message,
+        email: dm.fromUser?.id || dm.fromUserId,
+        role: 'user',
+        profileImageUrl: dm.fromUser?.profileImageUrl,
+        ts: new Date(dm.timestamp).getTime(),
+        isDirect: true,
+        fromUserId: dm.fromUserId,
+        toUserId: dm.toUserId
+      }));
+    }
+    return messages[currentRoom] || [];
+  };
+
   return {
     connected,
     user,
     rooms,
     currentRoom,
-    messages: currentDirectChat ? directMessages[currentDirectChat] || [] : messages[currentRoom] || [],
+    messages: getUnifiedMessages(),
     directConversations,
     currentDirectChat,
     join,

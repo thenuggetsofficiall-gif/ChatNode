@@ -14,6 +14,19 @@ export interface Message {
   ts: number;
 }
 
+export interface UnifiedMessage {
+  id?: string;
+  display: string;
+  text: string;
+  email: string;
+  role: string;
+  profileImageUrl?: string;
+  ts: number;
+  isDirect?: boolean;
+  fromUserId?: string;
+  toUserId?: string;
+}
+
 export interface Warning {
   reason: string;
   issuer: string;
