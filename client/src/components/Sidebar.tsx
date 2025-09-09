@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Hash, Plus, Settings, List, Ban, Crown, Shield, Megaphone, Lock } from 'lucide-react';
+import { Hash, Plus, Settings, List, Ban, Crown, Shield, Megaphone, Lock, MessageCircle, Users } from 'lucide-react';
+import { useState } from 'react';
 import type { User } from '@/types/chat';
 
 interface SidebarProps {
@@ -30,6 +31,8 @@ export function Sidebar({
   onOpenPasswords
 }: SidebarProps) {
   const isAdmin = user.role === 'admin' || user.role === 'owner';
+  const [activeTab, setActiveTab] = useState<'rooms' | 'direct'>('rooms');
+  const [directMessages, setDirectMessages] = useState<string[]>([]);
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -89,25 +92,53 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Rooms Section - Scrollable */}
+      {/* Tab System */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="p-4 pb-2 flex-shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Rooms</h3>
+        {/* Tab Headers */}
+        <div className="px-4 pt-4 pb-2 flex-shrink-0">
+          <div className="flex space-x-2 mb-4">
+            <Button
+              variant={activeTab === 'rooms' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('rooms')}
+              className="flex-1"
+              data-testid="tab-rooms"
+            >
+              <Hash className="h-4 w-4 mr-2" />
+              Rooms
+            </Button>
+            <Button
+              variant={activeTab === 'direct' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('direct')}
+              className="flex-1"
+              data-testid="tab-direct"
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Direct
+            </Button>
+          </div>
+
+          {/* Tab Content Header */}
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">
+              {activeTab === 'rooms' ? 'Rooms' : 'Direct Messages'}
+            </h3>
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={onCreateRoom}
-              data-testid="button-create-room"
+              onClick={activeTab === 'rooms' ? onCreateRoom : () => {/* TODO: Add new DM */}}
+              data-testid={activeTab === 'rooms' ? "button-create-room" : "button-new-dm"}
             >
               <Plus className="h-4 w-4" />
             </Button>
           </div>
         </div>
         
+        {/* Tab Content */}
         <div 
-          className="flex-1 px-4 pb-4 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-200" 
-          data-testid="list-rooms"
+          className="flex-1 px-4 pb-4 scrollbar-thin" 
+          data-testid={activeTab === 'rooms' ? "list-rooms" : "list-direct"}
           style={{ 
             height: '300px',
             overflowY: 'scroll',
@@ -116,18 +147,43 @@ export function Sidebar({
           }}
         >
           <div className="space-y-2">
-            {rooms.map((room) => (
-              <Button
-                key={room}
-                variant={room === currentRoom ? "secondary" : "ghost"}
-                className="w-full justify-start"
-                onClick={() => onRoomSwitch(room)}
-                data-testid={`button-room-${room}`}
-              >
-                <Hash className="h-4 w-4 mr-2" />
-                {room}
-              </Button>
-            ))}
+            {activeTab === 'rooms' ? (
+              // Rooms Tab Content
+              rooms.map((room) => (
+                <Button
+                  key={room}
+                  variant={room === currentRoom ? "secondary" : "ghost"}
+                  className="w-full justify-start"
+                  onClick={() => onRoomSwitch(room)}
+                  data-testid={`button-room-${room}`}
+                >
+                  <Hash className="h-4 w-4 mr-2" />
+                  {room}
+                </Button>
+              ))
+            ) : (
+              // Direct Messages Tab Content
+              directMessages.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No direct messages yet</p>
+                  <p className="text-xs mt-1">Click + to start a conversation</p>
+                </div>
+              ) : (
+                directMessages.map((dm) => (
+                  <Button
+                    key={dm}
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => {/* TODO: Switch to DM */}}
+                    data-testid={`button-dm-${dm}`}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    {dm}
+                  </Button>
+                ))
+              )
+            )}
           </div>
         </div>
       </div>
