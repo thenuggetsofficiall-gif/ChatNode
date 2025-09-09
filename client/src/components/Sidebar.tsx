@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Hash, Plus, Settings, List, Ban, Crown, Shield, Megaphone, Lock, MessageCircle, Users } from 'lucide-react';
 import { useState } from 'react';
+import { AddDirectMessageModal } from './AddDirectMessageModal';
 import type { User } from '@/types/chat';
 
 interface SidebarProps {
@@ -19,6 +20,7 @@ interface SidebarProps {
   directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
   onLoadDirectConversations?: () => void;
   onStartDirectChat?: (userId: string) => void;
+  onStartDirectConversationByEmail?: (email: string) => Promise<void>;
   currentDirectChat?: string | null;
 }
 
@@ -36,10 +38,12 @@ export function Sidebar({
   directConversations = [],
   onLoadDirectConversations,
   onStartDirectChat,
+  onStartDirectConversationByEmail,
   currentDirectChat
 }: SidebarProps) {
   const isAdmin = user.role === 'admin' || user.role === 'owner';
   const [activeTab, setActiveTab] = useState<'rooms' | 'direct'>('rooms');
+  const [showAddDMModal, setShowAddDMModal] = useState(false);
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -137,7 +141,7 @@ export function Sidebar({
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={activeTab === 'rooms' ? onCreateRoom : () => {/* TODO: Add new DM */}}
+              onClick={activeTab === 'rooms' ? onCreateRoom : () => setShowAddDMModal(true)}
               data-testid={activeTab === 'rooms' ? "button-create-room" : "button-new-dm"}
             >
               <Plus className="h-4 w-4" />
@@ -259,6 +263,17 @@ export function Sidebar({
           </div>
         </div>
       )}
+
+      {/* Add Direct Message Modal */}
+      <AddDirectMessageModal
+        isOpen={showAddDMModal}
+        onClose={() => setShowAddDMModal(false)}
+        onStartConversation={async (email: string) => {
+          if (onStartDirectConversationByEmail) {
+            await onStartDirectConversationByEmail(email);
+          }
+        }}
+      />
     </div>
   );
 }

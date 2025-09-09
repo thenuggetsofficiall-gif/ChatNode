@@ -28,6 +28,7 @@ interface ChatInterfaceProps {
   currentDirectChat?: string | null;
   onLoadDirectConversations?: () => void;
   onStartDirectChat?: (userId: string) => void;
+  onStartDirectConversationByEmail?: (email: string) => Promise<void>;
   socketManager: any;
 }
 
@@ -45,6 +46,7 @@ export function ChatInterface({
   currentDirectChat,
   onLoadDirectConversations,
   onStartDirectChat,
+  onStartDirectConversationByEmail,
   socketManager
 }: ChatInterfaceProps) {
   const [messageText, setMessageText] = useState('');
@@ -296,6 +298,7 @@ export function ChatInterface({
         directConversations={directConversations}
         onLoadDirectConversations={onLoadDirectConversations}
         onStartDirectChat={onStartDirectChat}
+        onStartDirectConversationByEmail={onStartDirectConversationByEmail}
         currentDirectChat={currentDirectChat}
       />
 
