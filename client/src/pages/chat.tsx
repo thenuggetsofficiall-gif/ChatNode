@@ -21,6 +21,7 @@ export default function Chat() {
     updateUser,
     loadDirectConversations,
     startDirectChat,
+    startDirectConversationByEmail,
     socketManager 
   } = useSocket();
   const { toast } = useToast();
