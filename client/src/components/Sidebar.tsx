@@ -11,6 +11,7 @@ interface SidebarProps {
   onCreateRoom: () => void;
   onOpenLogs: () => void;
   onOpenBans: () => void;
+  onOpenSettings: () => void;
 }
 
 export function Sidebar({ 
@@ -20,7 +21,8 @@ export function Sidebar({
   onRoomSwitch, 
   onCreateRoom,
   onOpenLogs,
-  onOpenBans 
+  onOpenBans,
+  onOpenSettings
 }: SidebarProps) {
   const isAdmin = user.role === 'admin' || user.role === 'owner';
 
@@ -58,7 +60,12 @@ export function Sidebar({
               </div>
             </div>
           </div>
-          <Button variant="ghost" size="sm">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={onOpenSettings}
+            data-testid="button-settings"
+          >
             <Settings className="h-4 w-4" />
           </Button>
         </div>

@@ -4,6 +4,7 @@ import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
+import { ObjectStorageService, ObjectNotFoundError } from './objectStorage';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -90,6 +91,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(adminList.emails);
     } catch (error) {
       console.error('❌ Error in /api/admins:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Object storage routes
+  app.post("/api/objects/upload", async (req, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting upload URL:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
+  app.get("/objects/:objectPath(*)", async (req, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
+      objectStorageService.downloadObject(objectFile, res);
+    } catch (error) {
+      console.error("Error downloading object:", error);
+      if (error instanceof ObjectNotFoundError) {
+        return res.sendStatus(404);
+      }
+      return res.sendStatus(500);
+    }
+  });
+
+  // Profile update route
+  app.put('/api/profile', (req, res) => {
+    try {
+      const { email, username, profileImageUrl } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+
+      const user = usersByEmail[email.toLowerCase()];
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (username && username.trim()) {
+        user.username = username.trim();
+      }
+
+      if (profileImageUrl !== undefined) {
+        user.profileImageUrl = profileImageUrl;
+      }
+
+      usersByEmail[email.toLowerCase()] = user;
+      saveAll();
+
+      res.json({ success: true, user });
+    } catch (error) {
+      console.error('❌ Error in /api/profile:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
@@ -219,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const text = String(payload.text || '').trim();
       if (!text) return cb && cb({ ok: false, err: 'empty' });
 
-      const display = (user.role === 'owner') ? 'OWNER' : (user.role === 'admin') ? 'ADMIN' : user.username;
+      const display = (user.role === 'owner') ? `${user.username} [OWNER]` : (user.role === 'admin') ? `${user.username} [ADMIN]` : user.username;
       const msg = { display, text, email: user.email, role: user.role, ts: Date.now() };
 
       if (!messages[room]) messages[room] = [];

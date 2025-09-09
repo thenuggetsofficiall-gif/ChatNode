@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Hash, Users, Search, Send, Smile } from 'lucide-react';
+import { Hash, Users, Search, Send, Smile, Settings } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { MessageList } from './MessageList';
 import { AdminModals } from './AdminModals';
+import { SettingsModal } from './SettingsModal';
 import { useToast } from '@/hooks/use-toast';
 import type { User, Message, MessageLog, Ban, Warning } from '@/types/chat';
 
@@ -38,6 +39,7 @@ export function ChatInterface({
   const [roomName, setRoomName] = useState('');
   const [showLogs, setShowLogs] = useState(false);
   const [showBans, setShowBans] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [logs, setLogs] = useState<MessageLog[]>([]);
   const [bans, setBans] = useState<Record<string, Ban>>({});
   const [warning, setWarning] = useState<Warning | null>(null);
@@ -156,6 +158,31 @@ export function ChatInterface({
     }
   };
 
+  const handleUpdateProfile = async (updates: { username?: string; profileImageUrl?: string }) => {
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: user.email,
+          ...updates
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      // Refresh user data
+      window.location.reload();
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      throw error;
+    }
+  };
+
   const handleAckWarning = async () => {
     try {
       await socketManager.ackWarning();
@@ -183,6 +210,7 @@ export function ChatInterface({
         onCreateRoom={() => setShowCreateRoom(true)}
         onOpenLogs={handleOpenLogs}
         onOpenBans={handleOpenBans}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       {/* Main Chat Area */}
@@ -302,6 +330,14 @@ export function ChatInterface({
         onBanUser={handleBanUser}
         onUnbanUser={handleUnbanUser}
         onAckWarning={handleAckWarning}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        currentUser={user}
+        onUpdateProfile={handleUpdateProfile}
       />
     </div>
   );
