@@ -43,7 +43,7 @@ export function Sidebar({
   };
 
   return (
-    <div className="w-80 bg-card border-r border-border flex flex-col h-full">
+    <div className="w-80 bg-card border-r border-border flex flex-col h-screen max-h-screen">
       {/* User Info Header - Fixed */}
       <div className="p-4 border-b border-border flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -105,7 +105,11 @@ export function Sidebar({
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto px-4 pb-4" data-testid="list-rooms">
+        <div 
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4" 
+          data-testid="list-rooms"
+          style={{ maxHeight: 'calc(100vh - 400px)' }}
+        >
           <div className="space-y-2">
             {rooms.map((room) => (
               <Button
