@@ -60,13 +60,14 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
 
   return (
     <div 
-      className="h-full overflow-y-auto overflow-x-hidden p-4" 
+      className="h-full p-4 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-200" 
       ref={scrollRef}
       data-testid="scroll-messages"
       style={{ 
         height: '100%',
-        overflowY: 'auto',
-        overflowX: 'hidden'
+        overflowY: 'scroll',
+        overflowX: 'hidden',
+        border: '1px solid rgba(255,255,255,0.05)'
       }}
     >
       <div className="space-y-4">

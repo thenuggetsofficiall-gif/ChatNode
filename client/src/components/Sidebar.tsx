@@ -106,12 +106,13 @@ export function Sidebar({
         </div>
         
         <div 
-          className="flex-1 px-4 pb-4" 
+          className="flex-1 px-4 pb-4 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-200" 
           data-testid="list-rooms"
           style={{ 
-            height: 'calc(100vh - 350px)',
+            height: '300px',
             overflowY: 'scroll',
-            overflowX: 'hidden'
+            overflowX: 'hidden',
+            border: '1px solid rgba(255,255,255,0.1)'
           }}
         >
           <div className="space-y-2">
