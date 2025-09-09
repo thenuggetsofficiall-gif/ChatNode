@@ -36,6 +36,23 @@ export interface Room {
   createdAt: number;
 }
 
+export interface DirectMessage {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  message: string;
+  timestamp: Date;
+  fromUser?: { id: string; username: string; profileImageUrl?: string };
+  toUser?: { id: string; username: string };
+}
+
+export interface DirectConversation {
+  userId: string;
+  username: string;
+  lastMessage: string;
+  timestamp: Date;
+}
+
 export interface SocketResponse<T = any> {
   ok: boolean;
   err?: string;
@@ -46,5 +63,6 @@ export interface SocketResponse<T = any> {
   messages?: Message[];
   logs?: MessageLog[];
   bans?: Record<string, Ban>;
+  conversations?: DirectConversation[];
   data?: T;
 }

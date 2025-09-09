@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import type { User, Message, Warning, Ban, SocketResponse } from '@/types/chat';
+import type { User, Message, Warning, Ban, SocketResponse, DirectMessage, DirectConversation } from '@/types/chat';
 
 class SocketManager {
   private socket: Socket | null = null;
@@ -126,9 +126,38 @@ class SocketManager {
     });
   }
 
+  // Direct Message methods
+  getDirectConversations(): Promise<SocketResponse<{ conversations: DirectConversation[] }>> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getDirectConversations', (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  getDirectMessages(otherUserId: string): Promise<SocketResponse<{ messages: DirectMessage[] }>> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getDirectMessages', { otherUserId }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  sendDirectMessage(toUserId: string, message: string): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('sendDirectMessage', { toUserId, message }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
   // Event listeners
   onMessage(callback: (data: { room: string; msg: Message }) => void) {
     this.socket?.on('message', callback);
+  }
+
+  onDirectMessage(callback: (message: DirectMessage) => void) {
+    this.socket?.on('directMessage', callback);
   }
 
   onRooms(callback: (rooms: string[]) => void) {
