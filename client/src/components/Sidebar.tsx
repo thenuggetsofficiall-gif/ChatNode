@@ -43,9 +43,9 @@ export function Sidebar({
   };
 
   return (
-    <div className="w-80 bg-card border-r border-border flex flex-col">
-      {/* User Info Header */}
-      <div className="p-4 border-b border-border">
+    <div className="w-80 bg-card border-r border-border flex flex-col h-full">
+      {/* User Info Header - Fixed */}
+      <div className="p-4 border-b border-border flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Avatar className="w-10 h-10">
@@ -89,39 +89,43 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Rooms Section */}
-      <div className="flex-1 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Rooms</h3>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={onCreateRoom}
-            data-testid="button-create-room"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+      {/* Rooms Section - Scrollable */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="p-4 pb-2 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Rooms</h3>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={onCreateRoom}
+              data-testid="button-create-room"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         
-        <div className="space-y-2" data-testid="list-rooms">
-          {rooms.map((room) => (
-            <Button
-              key={room}
-              variant={room === currentRoom ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => onRoomSwitch(room)}
-              data-testid={`button-room-${room}`}
-            >
-              <Hash className="h-4 w-4 mr-2" />
-              {room}
-            </Button>
-          ))}
+        <div className="flex-1 overflow-y-auto px-4 pb-4" data-testid="list-rooms">
+          <div className="space-y-2">
+            {rooms.map((room) => (
+              <Button
+                key={room}
+                variant={room === currentRoom ? "secondary" : "ghost"}
+                className="w-full justify-start"
+                onClick={() => onRoomSwitch(room)}
+                data-testid={`button-room-${room}`}
+              >
+                <Hash className="h-4 w-4 mr-2" />
+                {room}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Admin Panel */}
+      {/* Admin Panel - Fixed at bottom */}
       {isAdmin && (
-        <div className="border-t border-border p-4">
+        <div className="border-t border-border p-4 flex-shrink-0">
           <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider mb-4">
             Admin Panel
           </h3>
