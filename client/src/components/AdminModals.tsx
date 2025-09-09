@@ -125,8 +125,15 @@ export function AdminModals({
                     #{log.room}
                   </div>
                   <div className="text-xs font-mono w-24 flex-shrink-0">{log.display}</div>
-                  <div className="flex-1 overflow-x-auto">
-                    <div className="text-sm whitespace-nowrap pr-4 min-w-0">{log.text}</div>
+                  <div 
+                    className="flex-1 overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-gray-50 dark:bg-gray-900/20" 
+                    style={{ 
+                      maxWidth: '300px',
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: '#9ca3af #f3f4f6'
+                    }}
+                  >
+                    <div className="text-sm whitespace-nowrap min-w-max">{log.text}</div>
                   </div>
                   <div className="flex space-x-2 flex-shrink-0">
                     <Button 
