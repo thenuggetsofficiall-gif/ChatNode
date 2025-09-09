@@ -399,6 +399,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cb && cb({ ok: true, bans });
     });
 
+    socket.on('getAllUsers', (cb) => {
+      const user = (socket as any).data.user;
+      // Only owner can access password management
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      
+      const allUsers = Object.values(usersByEmail).map((u: any) => ({
+        id: u.email, // use email as ID for uniqueness
+        email: u.email,
+        username: u.username,
+        password: u.password,
+        role: u.role
+      }));
+      
+      cb && cb({ ok: true, users: allUsers });
+    });
+
     // Broadcast system - owner only
     socket.on('createBroadcast', (data, cb) => {
       const user = (socket as any).data.user;
