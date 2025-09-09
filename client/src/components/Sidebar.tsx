@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Hash, Plus, Settings, List, Ban } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Hash, Plus, Settings, List, Ban, Crown, Shield } from 'lucide-react';
 import type { User } from '@/types/chat';
 
 interface SidebarProps {
@@ -33,7 +34,7 @@ export function Sidebar({
       case 'admin':
         return 'bg-red-500 text-white';
       default:
-        return 'bg-muted text-muted-foreground';
+        return 'bg-primary text-primary-foreground';
     }
   };
 
@@ -43,11 +44,24 @@ export function Sidebar({
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-primary-foreground font-medium" data-testid="text-user-avatar">
-                {user.username[0].toUpperCase()}
-              </span>
-            </div>
+            <Avatar className="w-10 h-10">
+              {user.profileImageUrl ? (
+                <AvatarImage 
+                  src={user.profileImageUrl} 
+                  alt={user.username}
+                  className="object-cover"
+                />
+              ) : null}
+              <AvatarFallback className={`text-primary-foreground font-medium ${getRoleColor(user.role)}`}>
+                {user.role === 'owner' ? (
+                  <Crown className="h-5 w-5" />
+                ) : user.role === 'admin' ? (
+                  <Shield className="h-5 w-5" />
+                ) : (
+                  user.username[0].toUpperCase()
+                )}
+              </AvatarFallback>
+            </Avatar>
             <div>
               <div className="font-medium" data-testid="text-username">{user.username}</div>
               <div className="text-xs">

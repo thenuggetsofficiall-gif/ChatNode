@@ -285,7 +285,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!text) return cb && cb({ ok: false, err: 'empty' });
 
       const display = (user.role === 'owner') ? `${user.username} [OWNER]` : (user.role === 'admin') ? `${user.username} [ADMIN]` : user.username;
-      const msg = { display, text, email: user.email, role: user.role, ts: Date.now() };
+      const msg = { display, text, email: user.email, role: user.role, profileImageUrl: user.profileImageUrl, ts: Date.now() };
 
       if (!messages[room]) messages[room] = [];
       messages[room].push(msg);

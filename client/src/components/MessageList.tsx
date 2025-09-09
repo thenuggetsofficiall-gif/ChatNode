@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Crown, Shield, Reply } from 'lucide-react';
 import type { Message } from '@/types/chat';
@@ -73,6 +73,13 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
             data-testid={`message-${index}`}
           >
             <Avatar className="h-8 w-8">
+              {message.profileImageUrl ? (
+                <AvatarImage 
+                  src={message.profileImageUrl} 
+                  alt={message.display}
+                  className="object-cover"
+                />
+              ) : null}
               <AvatarFallback className={`text-xs font-medium text-white ${getAvatarColor(message.role)}`}>
                 {message.role === 'owner' ? (
                   <Crown className="h-4 w-4" />

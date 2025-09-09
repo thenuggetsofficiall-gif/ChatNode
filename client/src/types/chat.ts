@@ -10,6 +10,7 @@ export interface Message {
   text: string;
   email: string;
   role: string;
+  profileImageUrl?: string;
   ts: number;
 }
 
