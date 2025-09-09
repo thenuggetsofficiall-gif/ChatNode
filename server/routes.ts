@@ -5,6 +5,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { ObjectStorageService, ObjectNotFoundError } from './objectStorage';
+import { storage } from './storage';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -477,6 +478,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
       saveAll();
 
       cb && cb({ ok: true });
+    });
+
+    // Direct Message Events
+    socket.on('getDirectConversations', async (cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      
+      try {
+        const conversations = await storage.getDirectConversations(user.id);
+        cb && cb({ ok: true, conversations });
+      } catch (error) {
+        console.error('Error getting direct conversations:', error);
+        cb && cb({ ok: false, err: 'server-error' });
+      }
+    });
+
+    socket.on('getDirectMessages', async (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      
+      const { otherUserId } = data;
+      if (!otherUserId) return cb && cb({ ok: false, err: 'missing-user-id' });
+      
+      try {
+        const messages = await storage.getDirectMessages(user.id, otherUserId);
+        cb && cb({ ok: true, messages });
+      } catch (error) {
+        console.error('Error getting direct messages:', error);
+        cb && cb({ ok: false, err: 'server-error' });
+      }
+    });
+
+    socket.on('sendDirectMessage', async (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      if (bans[user.email]) return cb && cb({ ok: false, err: 'banned' });
+
+      // Check for unacked warnings
+      const now = Date.now();
+      const oneHour = 60 * 60 * 1000;
+      const userWarnings = warnings[user.email] || [];
+      const validWarnings = userWarnings.filter((w: any) => (now - w.ts) < oneHour);
+      
+      if (validWarnings.length !== userWarnings.length) {
+        warnings[user.email] = validWarnings;
+        saveAll();
+      }
+      
+      const unacked = validWarnings.some((w: any) => !w.acknowledged);
+      if (unacked) return cb && cb({ ok: false, err: 'warning' });
+
+      const { toUserId, message } = data;
+      if (!toUserId || !message?.trim()) {
+        return cb && cb({ ok: false, err: 'missing-data' });
+      }
+
+      try {
+        const directMessage = await storage.createDirectMessage({
+          fromUserId: user.id,
+          toUserId,
+          message: message.trim(),
+        });
+
+        // Find the target user's socket to send them the message
+        const targetUser = await storage.getUser(toUserId);
+        if (targetUser) {
+          // Send to both users (sender and receiver)
+          const messageData = {
+            ...directMessage,
+            fromUser: { id: user.id, username: user.username, profileImageUrl: user.profileImageUrl },
+            toUser: { id: targetUser.id, username: targetUser.username }
+          };
+          
+          // Send to sender
+          socket.emit('directMessage', messageData);
+          
+          // Send to receiver (if they're online)
+          socket.broadcast.emit('directMessage', messageData);
+        }
+
+        cb && cb({ ok: true, message: directMessage });
+      } catch (error) {
+        console.error('Error sending direct message:', error);
+        cb && cb({ ok: false, err: 'server-error' });
+      }
     });
 
     socket.on('disconnect', () => {
