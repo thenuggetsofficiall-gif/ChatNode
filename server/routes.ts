@@ -164,6 +164,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Search user by email for direct messaging
+  app.get('/api/users/search', (req, res) => {
+    try {
+      const { email } = req.query;
+      
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ error: 'Email parameter is required' });
+      }
+
+      const user = usersByEmail[email.toLowerCase()];
+      if (!user) {
+        return res.status(404).json({ error: 'User not found with this email address' });
+      }
+
+      // Return limited user info for security
+      res.json({
+        id: user.email, // Using email as ID since that's the primary key
+        username: user.username,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl
+      });
+    } catch (error) {
+      console.error('❌ Error in /api/users/search:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Socket.IO connection handling
   io.on('connection', (socket) => {
     console.log('conn', socket.id);
