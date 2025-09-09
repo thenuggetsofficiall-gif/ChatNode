@@ -23,6 +23,7 @@ interface ChatInterfaceProps {
   onRoomSwitch: (room: string) => void;
   onSendMessage: (text: string) => Promise<void>;
   onCreateRoom: (name: string) => Promise<void>;
+  onUpdateUser?: (user: User) => void;
   socketManager: any;
 }
 
@@ -35,6 +36,7 @@ export function ChatInterface({
   onRoomSwitch,
   onSendMessage,
   onCreateRoom,
+  onUpdateUser,
   socketManager
 }: ChatInterfaceProps) {
   const [messageText, setMessageText] = useState('');
@@ -183,11 +185,18 @@ export function ChatInterface({
 
       const result = await response.json();
       
-      // If profile was successfully updated, refresh the page to show changes
-      if (result.success && result.updated) {
-        setTimeout(() => {
-          window.location.reload();
-        }, 500); // Small delay to show success message
+      // If profile was successfully updated, update the user state directly
+      if (result.success && result.updated && result.user) {
+        // Update the user state with the new data
+        onUpdateUser?.(result.user);
+        
+        // Update the socket user data as well
+        const socket = socketManager.getSocket();
+        if (socket) {
+          (socket as any).data = { ...(socket as any).data, user: result.user };
+        }
+        
+        console.log('✅ Profile updated locally:', result.user);
       }
     } catch (error) {
       console.error('Error updating profile:', error);

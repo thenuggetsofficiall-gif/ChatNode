@@ -16,6 +16,7 @@ export default function Chat() {
     sendMessage, 
     switchRoom, 
     createRoom,
+    updateUser,
     socketManager 
   } = useSocket();
   const { toast } = useToast();
@@ -92,6 +93,7 @@ export default function Chat() {
       onRoomSwitch={switchRoom}
       onSendMessage={handleSendMessage}
       onCreateRoom={handleCreateRoom}
+      onUpdateUser={updateUser}
       socketManager={socketManager}
     />
   );

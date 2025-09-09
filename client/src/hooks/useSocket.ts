@@ -46,8 +46,13 @@ export function useSocket() {
       if (response.rooms) {
         setRooms(response.rooms);
       }
+      console.log('✅ User authenticated and loaded:', response.user);
     }
     return response;
+  };
+
+  const updateUser = (updatedUser: User) => {
+    setUser(updatedUser);
   };
 
   const sendMessage = async (text: string) => {
@@ -81,6 +86,7 @@ export function useSocket() {
     sendMessage,
     switchRoom,
     createRoom,
+    updateUser,
     socketManager
   };
 }
