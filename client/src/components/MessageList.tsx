@@ -60,18 +60,19 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
   };
 
   return (
-    <ScrollArea 
-      className="flex-1 p-4" 
-      ref={scrollRef}
-      data-testid="scroll-messages"
-    >
-      <div className="space-y-4">
-        {messages.map((message, index) => (
-          <div 
-            key={index} 
-            className="flex space-x-3 hover:bg-muted/30 p-2 rounded-md -mx-2 group"
-            data-testid={`message-${index}`}
-          >
+    <div className="flex-1 relative">
+      <ScrollArea 
+        className="absolute inset-0 p-4" 
+        ref={scrollRef}
+        data-testid="scroll-messages"
+      >
+        <div className="space-y-4 min-h-full">
+          {messages.map((message, index) => (
+            <div 
+              key={index} 
+              className="flex space-x-3 hover:bg-muted/30 p-2 rounded-md -mx-2 group"
+              data-testid={`message-${index}`}
+            >
             <Avatar className="h-8 w-8">
               {message.profileImageUrl ? (
                 <AvatarImage 
@@ -124,9 +125,10 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
                 <Reply className="h-3 w-3" />
               </Button>
             </div>
-          </div>
-        ))}
-      </div>
-    </ScrollArea>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
