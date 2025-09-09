@@ -65,6 +65,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let warnings = loadJSON('warnings.json', {});
   let bans = loadJSON('bans.json', {});
   let adminList = loadJSON('admins.json', { emails: [] });
+  let currentBroadcast = loadJSON('broadcast.json', null);
+  let userDismissals = loadJSON('dismissals.json', {});
 
   const saveAll = () => {
     saveJSON('users.json', usersByEmail);
@@ -74,6 +76,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('warnings.json', warnings);
     saveJSON('bans.json', bans);
     saveJSON('admins.json', adminList);
+    saveJSON('broadcast.json', currentBroadcast);
+    saveJSON('dismissals.json', userDismissals);
   };
 
   // API routes with error handling
@@ -393,6 +397,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
       cb && cb({ ok: true, bans });
+    });
+
+    // Broadcast system - owner only
+    socket.on('createBroadcast', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+
+      const message = String(data.message || '').trim();
+      if (!message) return cb && cb({ ok: false, err: 'empty' });
+
+      // Create new broadcast
+      currentBroadcast = {
+        id: Date.now(),
+        message,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + (60 * 60 * 1000), // 1 hour
+        createdBy: user.email
+      };
+
+      // Clear all dismissals when new broadcast is created
+      userDismissals = {};
+      
+      saveAll();
+
+      // Broadcast to all connected clients
+      io.emit('broadcast', currentBroadcast);
+      cb && cb({ ok: true, broadcast: currentBroadcast });
+    });
+
+    // Get current broadcast for newly connected users
+    socket.on('getBroadcast', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+
+      // Check if broadcast is expired
+      if (currentBroadcast && Date.now() > currentBroadcast.expiresAt) {
+        currentBroadcast = null;
+        saveAll();
+      }
+
+      // Check if user has dismissed this broadcast
+      const isDismissed = currentBroadcast && userDismissals[user.email] === currentBroadcast.id;
+      
+      cb && cb({ 
+        ok: true, 
+        broadcast: currentBroadcast && !isDismissed ? currentBroadcast : null 
+      });
+    });
+
+    // Dismiss broadcast for current user only
+    socket.on('dismissBroadcast', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+
+      const broadcastId = data.broadcastId;
+      if (!broadcastId || !currentBroadcast || currentBroadcast.id !== broadcastId) {
+        return cb && cb({ ok: false, err: 'invalid-broadcast' });
+      }
+
+      // Mark as dismissed for this user
+      userDismissals[user.email] = broadcastId;
+      saveAll();
+
+      cb && cb({ ok: true });
     });
 
     socket.on('disconnect', () => {
