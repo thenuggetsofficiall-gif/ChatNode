@@ -8,6 +8,8 @@ import { Sidebar } from './Sidebar';
 import { MessageList } from './MessageList';
 import { AdminModals } from './AdminModals';
 import { SettingsModal } from './SettingsModal';
+import { BroadcastModal } from './BroadcastModal';
+import { AnnouncementBanner } from './AnnouncementBanner';
 import { useToast } from '@/hooks/use-toast';
 import type { User, Message, MessageLog, Ban, Warning } from '@/types/chat';
 
@@ -40,6 +42,8 @@ export function ChatInterface({
   const [showLogs, setShowLogs] = useState(false);
   const [showBans, setShowBans] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [logs, setLogs] = useState<MessageLog[]>([]);
   const [bans, setBans] = useState<Record<string, Ban>>({});
   const [warning, setWarning] = useState<Warning | null>(null);
@@ -206,8 +210,44 @@ export function ChatInterface({
     }
   };
 
+  const handleOpenBroadcast = () => {
+    setShowBroadcast(true);
+  };
+
+  const handleSendBroadcast = async (message: string) => {
+    setBroadcastLoading(true);
+    try {
+      socketManager.emit('createBroadcast', { message }, (response: any) => {
+        setBroadcastLoading(false);
+        if (response.ok) {
+          toast({
+            title: "Broadcast sent",
+            description: "Your announcement has been broadcast to all users.",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to send broadcast.",
+            variant: "destructive",
+          });
+        }
+      });
+    } catch (error) {
+      setBroadcastLoading(false);
+      toast({
+        title: "Error",
+        description: "Failed to send broadcast.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <div className="w-full h-full flex" data-testid="chat-interface">
+    <div className="w-full h-full flex flex-col" data-testid="chat-interface">
+      {/* Announcement Banner at the very top */}
+      <AnnouncementBanner socketManager={socketManager} />
+      
+      <div className="flex-1 flex">
       <Sidebar
         user={user}
         rooms={rooms}
@@ -217,6 +257,7 @@ export function ChatInterface({
         onOpenLogs={handleOpenLogs}
         onOpenBans={handleOpenBans}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenBroadcast={handleOpenBroadcast}
       />
 
       {/* Main Chat Area */}
@@ -348,6 +389,15 @@ export function ChatInterface({
         currentUser={user}
         onUpdateProfile={handleUpdateProfile}
       />
+
+      {/* Broadcast Modal */}
+      <BroadcastModal
+        open={showBroadcast}
+        onOpenChange={setShowBroadcast}
+        onSendBroadcast={handleSendBroadcast}
+        isLoading={broadcastLoading}
+      />
+      </div>
     </div>
   );
 }

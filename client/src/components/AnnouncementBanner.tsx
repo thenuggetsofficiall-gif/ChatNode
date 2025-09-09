@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Megaphone } from 'lucide-react';
-import { useSocket } from '@/hooks/useSocket';
 
 interface Broadcast {
   id: number;
@@ -11,16 +10,19 @@ interface Broadcast {
   createdBy: string;
 }
 
-export function AnnouncementBanner() {
+interface AnnouncementBannerProps {
+  socketManager: any;
+}
+
+export function AnnouncementBanner({ socketManager }: AnnouncementBannerProps) {
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const socket = useSocket();
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socketManager) return;
 
     // Request current broadcast when component mounts
-    socket.emit('getBroadcast', (response: any) => {
+    socketManager.emit('getBroadcast', (response: any) => {
       if (response.ok && response.broadcast) {
         setBroadcast(response.broadcast);
         setIsVisible(true);
@@ -33,12 +35,12 @@ export function AnnouncementBanner() {
       setIsVisible(true);
     };
 
-    socket.on('broadcast', handleBroadcast);
+    socketManager.on('broadcast', handleBroadcast);
 
     return () => {
-      socket.off('broadcast', handleBroadcast);
+      socketManager.off('broadcast', handleBroadcast);
     };
-  }, [socket]);
+  }, [socketManager]);
 
   // Auto-hide expired broadcasts
   useEffect(() => {
@@ -61,9 +63,9 @@ export function AnnouncementBanner() {
   }, [broadcast]);
 
   const handleDismiss = () => {
-    if (!socket || !broadcast) return;
+    if (!socketManager || !broadcast) return;
 
-    socket.emit('dismissBroadcast', { broadcastId: broadcast.id }, (response: any) => {
+    socketManager.emit('dismissBroadcast', { broadcastId: broadcast.id }, (response: any) => {
       if (response.ok) {
         setIsVisible(false);
       }
