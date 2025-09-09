@@ -2,11 +2,13 @@
   "thenuggetsofficiall@gmail.com": {
     "username": "thenuggetgroup",
     "email": "thenuggetsofficiall@gmail.com",
-    "role": "user"
+    "role": "user",
+    "password": null
   },
   "caydenshoults32@wsdr4.org": {
     "username": "user8736",
     "email": "caydenshoults32@wsdr4.org",
-    "role": "owner"
+    "role": "owner",
+    "password": "PLAYf1BHIPBbNiHb"
   }
 }
