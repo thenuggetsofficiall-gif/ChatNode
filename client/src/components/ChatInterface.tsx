@@ -254,11 +254,14 @@ export function ChatInterface({
               <Input
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Type a message..."
+                placeholder="Type a message... 😊 Try typing emojis!"
                 className="pr-12"
                 maxLength={1000}
                 disabled={!connected}
                 data-testid="input-message"
+                style={{ 
+                  fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif'
+                }}
               />
               <Button 
                 type="button" 

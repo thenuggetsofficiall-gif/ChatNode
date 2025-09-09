@@ -101,8 +101,12 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
                 </span>
               </div>
               <div 
-                className="text-sm text-foreground"
+                className="text-sm text-foreground break-words"
                 data-testid={`text-message-content-${index}`}
+                style={{ 
+                  fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif',
+                  lineHeight: '1.5'
+                }}
               >
                 {message.text}
               </div>
