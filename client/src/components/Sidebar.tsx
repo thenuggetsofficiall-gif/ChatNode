@@ -106,9 +106,13 @@ export function Sidebar({
         </div>
         
         <div 
-          className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4" 
+          className="flex-1 px-4 pb-4" 
           data-testid="list-rooms"
-          style={{ maxHeight: 'calc(100vh - 400px)' }}
+          style={{ 
+            height: 'calc(100vh - 350px)',
+            overflowY: 'scroll',
+            overflowX: 'hidden'
+          }}
         >
           <div className="space-y-2">
             {rooms.map((room) => (
