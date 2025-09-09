@@ -16,6 +16,10 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenBroadcast?: () => void;
   onOpenPasswords?: () => void;
+  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
+  onLoadDirectConversations?: () => void;
+  onStartDirectChat?: (userId: string) => void;
+  currentDirectChat?: string | null;
 }
 
 export function Sidebar({ 
@@ -28,11 +32,14 @@ export function Sidebar({
   onOpenBans,
   onOpenSettings,
   onOpenBroadcast,
-  onOpenPasswords
+  onOpenPasswords,
+  directConversations = [],
+  onLoadDirectConversations,
+  onStartDirectChat,
+  currentDirectChat
 }: SidebarProps) {
   const isAdmin = user.role === 'admin' || user.role === 'owner';
   const [activeTab, setActiveTab] = useState<'rooms' | 'direct'>('rooms');
-  const [directMessages, setDirectMessages] = useState<string[]>([]);
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -110,7 +117,10 @@ export function Sidebar({
             <Button
               variant={activeTab === 'direct' ? 'secondary' : 'ghost'}
               size="sm"
-              onClick={() => setActiveTab('direct')}
+              onClick={() => {
+                setActiveTab('direct');
+                onLoadDirectConversations?.();
+              }}
               className="flex-1"
               data-testid="tab-direct"
             >
@@ -163,23 +173,34 @@ export function Sidebar({
               ))
             ) : (
               // Direct Messages Tab Content
-              directMessages.length === 0 ? (
+              directConversations.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No direct messages yet</p>
                   <p className="text-xs mt-1">Click + to start a conversation</p>
                 </div>
               ) : (
-                directMessages.map((dm) => (
+                directConversations.map((conversation) => (
                   <Button
-                    key={dm}
-                    variant="ghost"
-                    className="w-full justify-start"
-                    onClick={() => {/* TODO: Switch to DM */}}
-                    data-testid={`button-dm-${dm}`}
+                    key={conversation.userId}
+                    variant={currentDirectChat === conversation.userId ? "secondary" : "ghost"}
+                    className="w-full justify-start p-3 h-auto"
+                    onClick={() => onStartDirectChat?.(conversation.userId)}
+                    data-testid={`button-dm-${conversation.userId}`}
                   >
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    {dm}
+                    <div className="flex items-center space-x-3 w-full">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="text-xs font-medium">
+                          {conversation.username[0]?.toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-sm">{conversation.username}</div>
+                        <div className="text-xs text-muted-foreground truncate max-w-40">
+                          {conversation.lastMessage}
+                        </div>
+                      </div>
+                    </div>
                   </Button>
                 ))
               )

@@ -12,11 +12,15 @@ export default function Chat() {
     rooms, 
     currentRoom, 
     messages, 
+    directConversations,
+    currentDirectChat,
     join, 
     sendMessage, 
     switchRoom, 
     createRoom,
     updateUser,
+    loadDirectConversations,
+    startDirectChat,
     socketManager 
   } = useSocket();
   const { toast } = useToast();
@@ -94,6 +98,10 @@ export default function Chat() {
       onSendMessage={handleSendMessage}
       onCreateRoom={handleCreateRoom}
       onUpdateUser={updateUser}
+      directConversations={directConversations}
+      currentDirectChat={currentDirectChat}
+      onLoadDirectConversations={loadDirectConversations}
+      onStartDirectChat={startDirectChat}
       socketManager={socketManager}
     />
   );

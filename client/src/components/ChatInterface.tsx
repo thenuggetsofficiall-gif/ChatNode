@@ -24,6 +24,10 @@ interface ChatInterfaceProps {
   onSendMessage: (text: string) => Promise<void>;
   onCreateRoom: (name: string) => Promise<void>;
   onUpdateUser?: (user: User) => void;
+  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
+  currentDirectChat?: string | null;
+  onLoadDirectConversations?: () => void;
+  onStartDirectChat?: (userId: string) => void;
   socketManager: any;
 }
 
@@ -37,6 +41,10 @@ export function ChatInterface({
   onSendMessage,
   onCreateRoom,
   onUpdateUser,
+  directConversations,
+  currentDirectChat,
+  onLoadDirectConversations,
+  onStartDirectChat,
   socketManager
 }: ChatInterfaceProps) {
   const [messageText, setMessageText] = useState('');
@@ -285,6 +293,10 @@ export function ChatInterface({
         onOpenSettings={() => setShowSettings(true)}
         onOpenBroadcast={handleOpenBroadcast}
         onOpenPasswords={handleOpenPasswords}
+        directConversations={directConversations}
+        onLoadDirectConversations={onLoadDirectConversations}
+        onStartDirectChat={onStartDirectChat}
+        currentDirectChat={currentDirectChat}
       />
 
       {/* Main Chat Area */}
