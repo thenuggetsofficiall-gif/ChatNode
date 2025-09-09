@@ -217,7 +217,18 @@ export function ChatInterface({
   const handleSendBroadcast = async (message: string) => {
     setBroadcastLoading(true);
     try {
-      socketManager.emit('createBroadcast', { message }, (response: any) => {
+      const socket = socketManager.getSocket();
+      if (!socket) {
+        setBroadcastLoading(false);
+        toast({
+          title: "Error",
+          description: "Not connected to server.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      socket.emit('createBroadcast', { message }, (response: any) => {
         setBroadcastLoading(false);
         if (response.ok) {
           toast({

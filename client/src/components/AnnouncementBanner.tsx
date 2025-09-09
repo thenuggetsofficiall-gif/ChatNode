@@ -20,9 +20,12 @@ export function AnnouncementBanner({ socketManager }: AnnouncementBannerProps) {
 
   useEffect(() => {
     if (!socketManager) return;
+    
+    const socket = socketManager.getSocket();
+    if (!socket) return;
 
     // Request current broadcast when component mounts
-    socketManager.emit('getBroadcast', (response: any) => {
+    socket.emit('getBroadcast', (response: any) => {
       if (response.ok && response.broadcast) {
         setBroadcast(response.broadcast);
         setIsVisible(true);
@@ -35,10 +38,10 @@ export function AnnouncementBanner({ socketManager }: AnnouncementBannerProps) {
       setIsVisible(true);
     };
 
-    socketManager.on('broadcast', handleBroadcast);
+    socket.on('broadcast', handleBroadcast);
 
     return () => {
-      socketManager.off('broadcast', handleBroadcast);
+      socket.off('broadcast', handleBroadcast);
     };
   }, [socketManager]);
 
@@ -64,8 +67,11 @@ export function AnnouncementBanner({ socketManager }: AnnouncementBannerProps) {
 
   const handleDismiss = () => {
     if (!socketManager || !broadcast) return;
+    
+    const socket = socketManager.getSocket();
+    if (!socket) return;
 
-    socketManager.emit('dismissBroadcast', { broadcastId: broadcast.id }, (response: any) => {
+    socket.emit('dismissBroadcast', { broadcastId: broadcast.id }, (response: any) => {
       if (response.ok) {
         setIsVisible(false);
       }
