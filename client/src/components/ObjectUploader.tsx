@@ -50,7 +50,7 @@ export function ObjectUploader({
       restrictions: {
         maxNumberOfFiles,
         maxFileSize,
-        allowedFileTypes: ['image/*'], // Only allow images for profile pictures
+        allowedFileTypes: ['.png', 'image/png'], // Only allow PNG files
       },
       autoProceed: false,
     })
