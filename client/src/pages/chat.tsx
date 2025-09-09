@@ -37,8 +37,6 @@ export default function Chat() {
           errorMessage = 'Password is required for new accounts';
         } else if (response.reason === 'invalid-owner-password') {
           errorMessage = 'Incorrect owner password';
-        } else if (response.message) {
-          errorMessage = response.message;
         }
         throw new Error(errorMessage);
       }
