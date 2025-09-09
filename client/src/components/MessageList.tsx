@@ -60,12 +60,11 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
 
   return (
     <div 
-      className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-full max-h-full" 
+      className="h-full overflow-y-auto overflow-x-hidden p-4" 
       ref={scrollRef}
       data-testid="scroll-messages"
       style={{ 
         height: '100%',
-        maxHeight: '100%',
         overflowY: 'auto',
         overflowX: 'hidden'
       }}

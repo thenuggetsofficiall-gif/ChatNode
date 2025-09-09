@@ -279,9 +279,9 @@ export function ChatInterface({
       />
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-full max-h-full">
         {/* Chat Header */}
-        <div className="p-4 border-b border-border bg-card/50">
+        <div className="p-4 border-b border-border bg-card/50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Hash className="text-muted-foreground h-5 w-5" />
@@ -304,10 +304,12 @@ export function ChatInterface({
         </div>
 
         {/* Messages Area */}
-        <MessageList messages={messages} currentUserEmail={user.email} />
+        <div className="flex-1 min-h-0">
+          <MessageList messages={messages} currentUserEmail={user.email} />
+        </div>
 
         {/* Message Input */}
-        <div className="p-4 border-t border-border bg-card/50">
+        <div className="p-4 border-t border-border bg-card/50 flex-shrink-0">
           <form onSubmit={handleSendMessage} className="flex space-x-3">
             <div className="flex-1 relative">
               <Input
