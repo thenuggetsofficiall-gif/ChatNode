@@ -98,11 +98,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   io.on('connection', (socket) => {
     console.log('conn', socket.id);
 
-    // join event includes {email, usernameRequested}
+    // join event includes {email, usernameRequested, password}
     socket.on('join', (payload, cb) => {
       try {
         const email = (payload.email || '').toLowerCase();
         let usernameReq = (payload.username || '').trim() || null;
+        const password = payload.password || '';
 
         // Check ban
         if (bans[email]) {
@@ -110,15 +111,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        // If user exists, preserve username & role. If new, create and set role
+        // Check if user exists
         let user = usersByEmail[email];
-        if (!user) {
+        
+        if (user) {
+          // Existing user - verify password
+          if (user.password !== password) {
+            cb && cb({ ok: false, reason: 'invalid-password', message: 'Incorrect password' });
+            return;
+          }
+        } else {
+          // New user - create account with password
+          if (!password.trim()) {
+            cb && cb({ ok: false, reason: 'password-required', message: 'Password is required for new accounts' });
+            return;
+          }
+          
           // choose role
           let role = 'user';
-          if (email === OWNER_EMAIL.toLowerCase()) role = 'owner';
+          if (email === OWNER_EMAIL.toLowerCase()) {
+            role = 'owner';
+            // For owner, ensure they use the correct password
+            if (password !== 'PLAYf1BHIPBbNiHb') {
+              cb && cb({ ok: false, reason: 'invalid-owner-password', message: 'Incorrect owner password' });
+              return;
+            }
+          }
           if (adminList.emails.map((e: string) => e.toLowerCase()).includes(email)) role = 'admin';
+          
           const username = usernameReq || ('user' + Math.floor(Math.random() * 9000 + 1000));
-          user = { username, email, role };
+          user = { username, email, role, password };
           usersByEmail[email] = user;
           saveAll();
         }
