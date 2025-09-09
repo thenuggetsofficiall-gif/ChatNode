@@ -43,9 +43,9 @@ class SocketManager {
   }
 
   // Auth methods
-  join(email: string, username?: string): Promise<SocketResponse<{ user: User; rooms: string[] }>> {
+  join(email: string, password: string, username?: string): Promise<SocketResponse<{ user: User; rooms: string[] }>> {
     return new Promise((resolve) => {
-      this.socket?.emit('join', { email, username }, (response: SocketResponse) => {
+      this.socket?.emit('join', { email, password, username }, (response: SocketResponse) => {
         resolve(response);
       });
     });

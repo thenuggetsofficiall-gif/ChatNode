@@ -39,8 +39,8 @@ export function useSocket() {
     };
   }, []);
 
-  const join = async (email: string, username?: string) => {
-    const response = await socketManager.join(email, username);
+  const join = async (email: string, password: string, username?: string) => {
+    const response = await socketManager.join(email, password, username);
     if (response.ok && response.user) {
       setUser(response.user);
       if (response.rooms) {

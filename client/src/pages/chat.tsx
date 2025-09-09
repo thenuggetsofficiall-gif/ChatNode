@@ -20,9 +20,9 @@ export default function Chat() {
   } = useSocket();
   const { toast } = useToast();
 
-  const handleAuth = async (email: string, username?: string) => {
+  const handleAuth = async (email: string, password: string, username?: string) => {
     try {
-      const response = await join(email, username);
+      const response = await join(email, password, username);
       if (response.ok) {
         setIsAuthenticated(true);
         toast({
@@ -30,7 +30,17 @@ export default function Chat() {
           description: `Logged in as ${response.user?.username}`
         });
       } else {
-        throw new Error(response.reason || 'Authentication failed');
+        let errorMessage = 'Authentication failed';
+        if (response.reason === 'invalid-password') {
+          errorMessage = 'Incorrect password';
+        } else if (response.reason === 'password-required') {
+          errorMessage = 'Password is required for new accounts';
+        } else if (response.reason === 'invalid-owner-password') {
+          errorMessage = 'Incorrect owner password';
+        } else if (response.message) {
+          errorMessage = response.message;
+        }
+        throw new Error(errorMessage);
       }
     } catch (error: any) {
       if (error.reason === 'banned') {

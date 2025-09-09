@@ -7,23 +7,24 @@ import { MessageCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthModalProps {
-  onAuth: (email: string, username?: string) => Promise<void>;
+  onAuth: (email: string, password: string, username?: string) => Promise<void>;
   connected: boolean;
 }
 
 export function AuthModal({ onAuth, connected }: AuthModalProps) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password.trim()) return;
 
     setLoading(true);
     try {
-      await onAuth(email.trim(), username.trim() || undefined);
+      await onAuth(email.trim(), password.trim(), username.trim() || undefined);
     } catch (error: any) {
       toast({
         title: "Authentication Failed",
@@ -62,6 +63,21 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
             </div>
             
             <div>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="mt-2"
+                data-testid="input-password"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Required for login or creating new account</p>
+            </div>
+            
+            <div>
               <Label htmlFor="username">Username (Optional)</Label>
               <Input
                 id="username"
@@ -78,7 +94,7 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={loading || !connected}
+              disabled={loading || !connected || !email.trim() || !password.trim()}
               data-testid="button-join"
             >
               {loading ? (
