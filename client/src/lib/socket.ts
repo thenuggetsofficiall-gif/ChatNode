@@ -151,6 +151,14 @@ class SocketManager {
     });
   }
 
+  startDirectConversationByEmail(email: string): Promise<SocketResponse<{ user: any }>> {
+    return new Promise((resolve) => {
+      this.socket?.emit('startDirectConversationByEmail', { email }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
   // Event listeners
   onMessage(callback: (data: { room: string; msg: Message }) => void) {
     this.socket?.on('message', callback);

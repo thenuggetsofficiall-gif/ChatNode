@@ -537,6 +537,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
+    // Start direct conversation by email
+    socket.on('startDirectConversationByEmail', async (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      
+      const { email } = data;
+      if (!email) return cb && cb({ ok: false, err: 'missing-email' });
+      
+      try {
+        // Find the target user by email
+        const targetUser = usersByEmail[email.toLowerCase()];
+        if (!targetUser) {
+          return cb && cb({ ok: false, err: 'user-not-found', message: 'User not found with this email address' });
+        }
+
+        // Don't allow messaging yourself
+        if (targetUser.email === user.email) {
+          return cb && cb({ ok: false, err: 'self-message', message: 'You cannot start a conversation with yourself' });
+        }
+
+        // Return the target user info to start the conversation
+        cb && cb({ 
+          ok: true, 
+          user: {
+            id: targetUser.email, // Using email as ID
+            username: targetUser.username,
+            email: targetUser.email,
+            profileImageUrl: targetUser.profileImageUrl
+          }
+        });
+      } catch (error) {
+        console.error('Error starting direct conversation by email:', error);
+        cb && cb({ ok: false, err: 'server-error' });
+      }
+    });
+
     socket.on('sendDirectMessage', async (data, cb) => {
       const user = (socket as any).data.user;
       if (!user) return cb && cb({ ok: false, err: 'not-authed' });

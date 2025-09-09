@@ -102,6 +102,7 @@ export default function Chat() {
       currentDirectChat={currentDirectChat}
       onLoadDirectConversations={loadDirectConversations}
       onStartDirectChat={startDirectChat}
+      onStartDirectConversationByEmail={startDirectConversationByEmail}
       socketManager={socketManager}
     />
   );

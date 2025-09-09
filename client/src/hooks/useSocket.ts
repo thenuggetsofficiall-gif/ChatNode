@@ -120,6 +120,20 @@ export function useSocket() {
     }
   };
 
+  const startDirectConversationByEmail = async (email: string) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    const response = await socketManager.startDirectConversationByEmail(email);
+    if (response.ok && response.data && response.data.user) {
+      // Start the conversation with the found user
+      await startDirectChat(response.data.user.id);
+      // Refresh conversations to include the new one
+      await loadDirectConversations();
+    } else {
+      throw new Error(response.message || 'Failed to start conversation');
+    }
+  };
+
   const sendDirectMessage = async (text: string, toUserId: string) => {
     return socketManager.sendDirectMessage(toUserId, text);
   };
@@ -165,6 +179,7 @@ export function useSocket() {
     updateUser,
     loadDirectConversations,
     startDirectChat,
+    startDirectConversationByEmail,
     sendDirectMessage,
     socketManager
   };
