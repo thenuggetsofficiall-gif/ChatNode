@@ -44,7 +44,7 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
       case 'admin':
         return 'text-red-500';
       default:
-        return '';
+        return 'text-foreground';
     }
   };
 
@@ -101,7 +101,7 @@ export function MessageList({ messages, currentUserEmail }: MessageListProps) {
                 </span>
               </div>
               <div 
-                className="text-sm"
+                className="text-sm text-foreground"
                 data-testid={`text-message-content-${index}`}
               >
                 {message.text}
