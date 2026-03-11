@@ -65,6 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let messageLogs = loadJSON('logs.json', []);
   let warnings = loadJSON('warnings.json', {});
   let bans = loadJSON('bans.json', {});
+  let ownerList = loadJSON('owners.json', { emails: [OWNER_EMAIL] });
   let adminList = loadJSON('admins.json', { emails: [] });
   let currentBroadcast = loadJSON('broadcast.json', null);
   let userDismissals = loadJSON('dismissals.json', {});
@@ -76,6 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('logs.json', messageLogs);
     saveJSON('warnings.json', warnings);
     saveJSON('bans.json', bans);
+    saveJSON('owners.json', ownerList);
     saveJSON('admins.json', adminList);
     saveJSON('broadcast.json', currentBroadcast);
     saveJSON('dismissals.json', userDismissals);
@@ -84,7 +86,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API routes with error handling
   app.get('/api/config', (req, res) => {
     try {
-      res.json({ ownerEmail: OWNER_EMAIL, admins: adminList.emails, rooms: Object.keys(rooms) });
+      res.json({ owners: ownerList.emails, admins: adminList.emails, rooms: Object.keys(rooms) });
     } catch (error) {
       console.error('❌ Error in /api/config:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -226,15 +228,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // choose role
           let role = 'user';
-          if (email === OWNER_EMAIL.toLowerCase()) {
+          if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(email)) {
             role = 'owner';
             // For owner, ensure they use the correct password
             if (password !== 'PLAYf1BHIPBbNiHb') {
               cb && cb({ ok: false, reason: 'invalid-owner-password', message: 'Incorrect owner password' });
               return;
             }
+          } else if (adminList.emails.map((e: string) => e.toLowerCase()).includes(email)) {
+            role = 'admin';
           }
-          if (adminList.emails.map((e: string) => e.toLowerCase()).includes(email)) role = 'admin';
           
           const username = usernameReq || ('user' + Math.floor(Math.random() * 9000 + 1000));
           user = { username, email, role, password };
