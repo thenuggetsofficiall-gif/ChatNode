@@ -219,6 +219,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             cb && cb({ ok: false, reason: 'invalid-password', message: 'Incorrect password' });
             return;
           }
+          // Update role if they're now an owner or admin
+          const lowerEmail = email.toLowerCase();
+          if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(lowerEmail)) {
+            user.role = 'owner';
+          } else if (adminList.emails.map((e: string) => e.toLowerCase()).includes(lowerEmail)) {
+            user.role = 'admin';
+          }
+          saveAll();
         } else {
           // New user - create account with password
           if (!password.trim()) {
@@ -228,14 +236,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // choose role
           let role = 'user';
-          if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(email)) {
+          const lowerEmail = email.toLowerCase();
+          if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(lowerEmail)) {
             role = 'owner';
-            // For owner, ensure they use the correct password
-            if (password !== 'PLAYf1BHIPBbNiHb') {
-              cb && cb({ ok: false, reason: 'invalid-owner-password', message: 'Incorrect owner password' });
-              return;
-            }
-          } else if (adminList.emails.map((e: string) => e.toLowerCase()).includes(email)) {
+          } else if (adminList.emails.map((e: string) => e.toLowerCase()).includes(lowerEmail)) {
             role = 'admin';
           }
           
