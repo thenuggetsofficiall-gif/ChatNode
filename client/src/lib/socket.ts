@@ -151,6 +151,30 @@ class SocketManager {
     });
   }
 
+  getUsers(): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getUsers', (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  reportMessage(data: { reportedEmail: string; reportedUsername: string; messageText: string; room: string }): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('reportMessage', data, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  getReports(): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getReports', (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
   markDMRead(otherEmail: string): Promise<SocketResponse> {
     return new Promise((resolve) => {
       this.socket?.emit('markDMRead', { otherEmail }, (response: SocketResponse) => {

@@ -72,6 +72,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let dmMessages = loadJSON('dm_messages.json', {});
   // Unread: { recipientEmail: { senderEmail: count } }
   let unreadDMs = loadJSON('unread_dms.json', {});
+  // Reports: array of { id, reporterEmail, reportedEmail, reportedUsername, messageText, room, ts }
+  let reports = loadJSON('reports.json', []);
   // Track connected sockets by email for real-time DM delivery
   const connectedByEmail: Record<string, Set<string>> = {};
 
@@ -88,6 +90,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('dismissals.json', userDismissals);
     saveJSON('dm_messages.json', dmMessages);
     saveJSON('unread_dms.json', unreadDMs);
+    saveJSON('reports.json', reports);
+  };
+
+  // Helper: get role of a user by email
+  const getUserRole = (email: string) => {
+    const e = email.toLowerCase();
+    if (ownerList.emails.map((x: string) => x.toLowerCase()).includes(e)) return 'owner';
+    if (adminList.emails.map((x: string) => x.toLowerCase()).includes(e)) return 'admin';
+    return 'user';
   };
 
   const dmKey = (emailA: string, emailB: string) =>
@@ -391,9 +402,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reason = String(data.reason || 'No reason provided').slice(0, 1000);
       if (!targetEmail) return cb && cb({ ok: false });
 
-      // Prevent warning the owner
-      if (targetEmail === OWNER_EMAIL.toLowerCase()) {
-        return cb && cb({ ok: false, err: 'cannot-warn-owner' });
+      // Owners cannot be warned by anyone
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') {
+        return cb && cb({ ok: false, err: 'cannot-warn-owner', message: 'Cannot warn an owner' });
+      }
+      // Admins cannot be warned by other admins (only owners can)
+      if (targetRole === 'admin' && user.role !== 'owner') {
+        return cb && cb({ ok: false, err: 'cannot-warn-admin', message: 'Admins cannot warn other admins' });
       }
 
       if (!warnings[targetEmail]) warnings[targetEmail] = [];
@@ -434,9 +450,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reason = String(data.reason || 'No reason provided').slice(0, 1000);
       if (!targetEmail) return cb && cb({ ok: false });
 
-      // Prevent banning the owner
-      if (targetEmail === OWNER_EMAIL.toLowerCase()) {
-        return cb && cb({ ok: false, err: 'cannot-ban-owner' });
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') {
+        return cb && cb({ ok: false, err: 'cannot-ban-owner', message: 'Cannot ban an owner' });
+      }
+      if (targetRole === 'admin' && user.role !== 'owner') {
+        return cb && cb({ ok: false, err: 'cannot-ban-admin', message: 'Admins cannot ban other admins' });
       }
 
       bans[targetEmail] = { reason, issuer: user.email, ts: Date.now() };
@@ -475,6 +494,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
       cb && cb({ ok: true, bans });
+    });
+
+    // Get all registered users (admin+)
+    socket.on('getUsers', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const allUsers = Object.values(usersByEmail).map((u: any) => ({
+        email: u.email,
+        username: u.username,
+        role: getUserRole(u.email),
+      }));
+      cb && cb({ ok: true, users: allUsers });
+    });
+
+    // Report a message
+    socket.on('reportMessage', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+
+      const { reportedEmail, reportedUsername, messageText, room } = data || {};
+      if (!reportedEmail || !messageText) return cb && cb({ ok: false, err: 'missing-data' });
+
+      const report = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        reporterEmail: user.email,
+        reporterUsername: user.username,
+        reportedEmail,
+        reportedUsername: reportedUsername || reportedEmail,
+        messageText,
+        room: room || 'unknown',
+        ts: Date.now(),
+      };
+      reports.push(report);
+      if (reports.length > 1000) reports.splice(0, reports.length - 1000);
+      saveAll();
+      cb && cb({ ok: true });
+    });
+
+    // Get reported messages (admin+)
+    socket.on('getReports', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      cb && cb({ ok: true, reports: reports.slice().reverse().slice(0, 500) });
     });
 
     socket.on('getAllUsers', (cb) => {
