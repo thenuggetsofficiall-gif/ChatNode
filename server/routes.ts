@@ -258,8 +258,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             role = 'admin';
           }
           
-          const username = usernameReq || ('user' + Math.floor(Math.random() * 9000 + 1000));
-          user = { username, email, role, password };
+          let chosenUsername = usernameReq;
+          if (!chosenUsername) {
+            // Auto-generate a unique username
+            let candidate = '';
+            do {
+              candidate = 'user' + Math.floor(Math.random() * 90000 + 10000);
+            } while (Object.values(usersByEmail).some((u: any) => u.username.toLowerCase() === candidate.toLowerCase()));
+            chosenUsername = candidate;
+          }
+
+          // Check username is not already taken by another account
+          const usernameTaken = Object.values(usersByEmail).some(
+            (u: any) => u.username.toLowerCase() === chosenUsername!.toLowerCase()
+          );
+          if (usernameTaken) {
+            cb && cb({ ok: false, reason: 'username-taken', message: 'That username is already taken, please choose another' });
+            return;
+          }
+
+          user = { username: chosenUsername, email, role, password };
           usersByEmail[email] = user;
           saveAll();
         }

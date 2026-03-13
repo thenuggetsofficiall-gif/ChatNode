@@ -34,6 +34,7 @@ export default function Chat() {
       if (reason === 'invalid-password') throw new Error('Incorrect password');
       if (reason === 'password-required') throw new Error('Password is required to create an account');
       if (reason === 'username-mismatch') throw new Error((response as any).message || 'Incorrect username for this email');
+      if (reason === 'username-taken') throw new Error((response as any).message || 'That username is already taken');
       if (reason === 'banned') throw new Error('Your account has been banned');
       throw new Error('Authentication failed');
     }
