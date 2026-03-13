@@ -42,6 +42,7 @@ export interface Ban {
 
 export interface MessageLog extends Message {
   room: string;
+  username?: string;
 }
 
 export interface Room {

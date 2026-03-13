@@ -21,13 +21,12 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) return;
-
     setLoading(true);
     try {
-      await onAuth(email.trim(), password.trim(), username.trim() || undefined);
+      await onAuth(email.trim().toLowerCase(), password.trim(), username.trim() || undefined);
     } catch (error: any) {
       toast({
-        title: "Authentication Failed",
+        title: "Login Failed",
         description: error.message || "Failed to join chat",
         variant: "destructive"
       });
@@ -41,10 +40,10 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="bg-primary/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <MessageCircle className="text-primary text-2xl h-8 w-8" />
+            <MessageCircle className="text-primary h-8 w-8" />
           </div>
           <CardTitle className="text-2xl">Welcome to MiniChat</CardTitle>
-          <p className="text-muted-foreground">Enter your details to join the conversation</p>
+          <p className="text-muted-foreground text-sm">Sign in or create an account</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -56,12 +55,12 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@example.com"
+                placeholder="your@email.com"
                 className="mt-2"
                 data-testid="input-email"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="password">Password</Label>
               <Input
@@ -70,56 +69,45 @@ export function AuthModal({ onAuth, connected }: AuthModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder="Your password"
                 className="mt-2"
                 data-testid="input-password"
               />
-              <p className="text-xs text-muted-foreground mt-1">Required for login or creating new account</p>
             </div>
-            
+
             <div>
-              <Label htmlFor="username">Username (Optional)</Label>
+              <Label htmlFor="username">
+                Username <span className="text-muted-foreground font-normal text-xs">(required if returning user, optional for new)</span>
+              </Label>
               <Input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter a username"
+                placeholder="Your username"
                 className="mt-2"
                 data-testid="input-username"
               />
-              <p className="text-xs text-muted-foreground mt-1">Leave empty for auto-generated username</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Existing users must enter their exact username to log in.
+              </p>
             </div>
-            
-            <Button 
-              type="submit" 
-              className="w-full" 
+
+            <Button
+              type="submit"
+              className="w-full"
               disabled={loading || !connected || !email.trim() || !password.trim()}
               data-testid="button-join"
             >
               {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                'Join Chat'
-              )}
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</>
+              ) : 'Join Chat'}
             </Button>
           </form>
 
-          <div className="mt-4 text-center">
-            <div className="flex items-center justify-center text-sm text-muted-foreground">
-              <div 
-                className={`w-2 h-2 rounded-full mr-2 ${
-                  connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-                }`}
-                data-testid="status-indicator"
-              />
-              <span data-testid="text-connection-status">
-                {connected ? 'Connected to server' : 'Disconnected'}
-              </span>
-            </div>
+          <div className="mt-4 flex items-center justify-center text-sm text-muted-foreground">
+            <div className={`w-2 h-2 rounded-full mr-2 ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span>{connected ? 'Connected to server' : 'Disconnected'}</span>
           </div>
         </CardContent>
       </Card>

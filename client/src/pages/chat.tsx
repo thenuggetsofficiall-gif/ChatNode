@@ -1,87 +1,63 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { AuthModal } from '@/components/AuthModal';
 import { ChatInterface } from '@/components/ChatInterface';
 import { useSocket } from '@/hooks/useSocket';
-import { useToast } from '@/hooks/use-toast';
+import type { Message } from '@/types/chat';
 
 export default function Chat() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const { 
-    connected, 
-    user, 
-    rooms, 
-    currentRoom, 
-    messages, 
+  const {
+    connected,
+    user,
+    rooms,
+    currentRoom,
+    messages,
     directConversations,
     currentDirectChat,
-    join, 
-    sendMessage, 
-    switchRoom, 
+    join,
+    sendMessage,
+    switchRoom,
     createRoom,
     updateUser,
     loadDirectConversations,
     startDirectChat,
-    startDirectConversationByEmail,
-    socketManager 
+    startDMByUsername,
+    socketManager
   } = useSocket();
-  const { toast } = useToast();
 
   const handleAuth = async (email: string, password: string, username?: string) => {
-    try {
-      const response = await join(email, password, username);
-      if (response.ok) {
-        setIsAuthenticated(true);
-        toast({
-          title: "Welcome to MiniChat!",
-          description: `Logged in as ${response.user?.username}`
-        });
-      } else {
-        let errorMessage = 'Authentication failed';
-        if (response.reason === 'invalid-password') {
-          errorMessage = 'Incorrect password';
-        } else if (response.reason === 'password-required') {
-          errorMessage = 'Password is required for new accounts';
-        } else if (response.reason === 'invalid-owner-password') {
-          errorMessage = 'Incorrect owner password';
-        }
-        throw new Error(errorMessage);
-      }
-    } catch (error: any) {
-      if (error.reason === 'banned') {
-        throw new Error('Your account has been banned from this chat.');
-      }
-      throw error;
+    const response = await join(email, password, username);
+    if (response.ok) {
+      setIsAuthenticated(true);
+    } else {
+      const reason = (response as any).reason;
+      if (reason === 'invalid-password') throw new Error('Incorrect password');
+      if (reason === 'password-required') throw new Error('Password is required to create an account');
+      if (reason === 'username-mismatch') throw new Error((response as any).message || 'Incorrect username for this email');
+      if (reason === 'banned') throw new Error('Your account has been banned');
+      throw new Error('Authentication failed');
     }
   };
 
-  const handleSendMessage = async (text: string) => {
-    const response = await sendMessage(text);
-    if (!response.ok) {
-      throw new Error(response.err || 'Failed to send message');
-    }
+  const handleSendMessage = async (text: string, replyTo?: Message) => {
+    const response = await sendMessage(text, replyTo);
+    if (!response.ok) throw new Error((response as any).err || 'Failed to send message');
   };
 
   const handleCreateRoom = async (name: string) => {
     const response = await createRoom(name);
-    if (!response.ok) {
-      throw new Error(response.err || 'Failed to create room');
-    }
+    if (!response.ok) throw new Error((response as any).err || 'Failed to create room');
   };
 
   if (!isAuthenticated) {
-    return (
-      <AuthModal 
-        onAuth={handleAuth} 
-        connected={connected}
-      />
-    );
+    return <AuthModal onAuth={handleAuth} connected={connected} />;
   }
 
   if (!user) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
           <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
@@ -103,7 +79,7 @@ export default function Chat() {
       currentDirectChat={currentDirectChat}
       onLoadDirectConversations={loadDirectConversations}
       onStartDirectChat={startDirectChat}
-      onStartDirectConversationByEmail={startDirectConversationByEmail}
+      onStartDMByUsername={startDMByUsername}
       socketManager={socketManager}
     />
   );

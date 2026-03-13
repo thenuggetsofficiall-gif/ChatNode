@@ -52,9 +52,9 @@ class SocketManager {
   }
 
   // Message methods
-  sendMessage(room: string, text: string): Promise<SocketResponse> {
+  sendMessage(room: string, text: string, replyTo?: any): Promise<SocketResponse> {
     return new Promise((resolve) => {
-      this.socket?.emit('message', { room, text }, (response: SocketResponse) => {
+      this.socket?.emit('message', { room, text, replyTo }, (response: SocketResponse) => {
         resolve(response);
       });
     });
@@ -154,6 +154,14 @@ class SocketManager {
   startDirectConversationByEmail(email: string): Promise<SocketResponse<{ user: any }>> {
     return new Promise((resolve) => {
       this.socket?.emit('startDirectConversationByEmail', { email }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  startDMByUsername(username: string): Promise<SocketResponse<{ user: any }>> {
+    return new Promise((resolve) => {
+      this.socket?.emit('startDMByUsername', { username }, (response: SocketResponse) => {
         resolve(response);
       });
     });

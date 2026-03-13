@@ -76,8 +76,8 @@ export function useSocket() {
     setUser(updatedUser);
   };
 
-  const sendMessage = async (text: string) => {
-    return socketManager.sendMessage(currentRoom, text);
+  const sendMessage = async (text: string, replyTo?: any) => {
+    return socketManager.sendMessage(currentRoom, text, replyTo);
   };
 
   const switchRoom = async (room: string) => {
@@ -125,12 +125,22 @@ export function useSocket() {
     
     const response = await socketManager.startDirectConversationByEmail(email);
     if (response.ok && response.data && response.data.user) {
-      // Start the conversation with the found user
       await startDirectChat(response.data.user.id);
-      // Refresh conversations to include the new one
       await loadDirectConversations();
     } else {
-      throw new Error(response.message || 'Failed to start conversation');
+      throw new Error((response as any).message || 'Failed to start conversation');
+    }
+  };
+
+  const startDMByUsername = async (username: string) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    const response = await socketManager.startDMByUsername(username);
+    if (response.ok && response.data && response.data.user) {
+      await startDirectChat(response.data.user.id);
+      await loadDirectConversations();
+    } else {
+      throw new Error((response as any).message || 'No user found with that username');
     }
   };
 
@@ -171,15 +181,16 @@ export function useSocket() {
     directConversations,
     currentDirectChat,
     join,
-    sendMessage: currentDirectChat ? 
-      (text: string) => sendDirectMessage(text, currentDirectChat) : 
-      sendMessage,
+    sendMessage: currentDirectChat
+      ? (text: string, _replyTo?: any) => sendDirectMessage(text, currentDirectChat)
+      : sendMessage,
     switchRoom: switchToRoom,
     createRoom,
     updateUser,
     loadDirectConversations,
     startDirectChat,
     startDirectConversationByEmail,
+    startDMByUsername,
     sendDirectMessage,
     socketManager
   };

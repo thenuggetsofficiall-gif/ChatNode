@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Hash, Users, Search, Send, Smile, Settings } from 'lucide-react';
+import { Hash, MessageCircle, Send, Smile, X, Reply } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { MessageList } from './MessageList';
 import { AdminModals } from './AdminModals';
@@ -11,8 +11,11 @@ import { SettingsModal } from './SettingsModal';
 import { BroadcastModal } from './BroadcastModal';
 import { PasswordModal } from './PasswordModal';
 import { AnnouncementBanner } from './AnnouncementBanner';
+import { AdminPanel } from './AdminPanel';
 import { useToast } from '@/hooks/use-toast';
 import type { User, Message, MessageLog, Ban, Warning } from '@/types/chat';
+
+const COMMON_EMOJIS = ['😀','😂','😍','🥰','😎','😭','😅','🤔','👍','👏','🎉','❤️','🔥','✨','💀','🙏','🤣','😊','😢','😤','😳','🤯','💯','🚀','👀','😏','🥺','😬','🤝','💪'];
 
 interface ChatInterfaceProps {
   user: User;
@@ -21,14 +24,14 @@ interface ChatInterfaceProps {
   messages: Message[];
   connected: boolean;
   onRoomSwitch: (room: string) => void;
-  onSendMessage: (text: string) => Promise<void>;
+  onSendMessage: (text: string, replyTo?: Message) => Promise<void>;
   onCreateRoom: (name: string) => Promise<void>;
   onUpdateUser?: (user: User) => void;
   directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
   currentDirectChat?: string | null;
   onLoadDirectConversations?: () => void;
   onStartDirectChat?: (userId: string) => void;
-  onStartDirectConversationByEmail?: (email: string) => Promise<void>;
+  onStartDMByUsername?: (username: string) => Promise<void>;
   socketManager: any;
 }
 
@@ -46,10 +49,11 @@ export function ChatInterface({
   currentDirectChat,
   onLoadDirectConversations,
   onStartDirectChat,
-  onStartDirectConversationByEmail,
+  onStartDMByUsername,
   socketManager
 }: ChatInterfaceProps) {
   const [messageText, setMessageText] = useState('');
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [showLogs, setShowLogs] = useState(false);
@@ -58,13 +62,15 @@ export function ChatInterface({
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [showPasswords, setShowPasswords] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [logs, setLogs] = useState<MessageLog[]>([]);
   const [bans, setBans] = useState<Record<string, Ban>>({});
   const [warning, setWarning] = useState<Warning | null>(null);
   const [banned, setBanned] = useState<Ban | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Socket event handlers
   useState(() => {
     if (socketManager) {
       socketManager.onWarning((w: Warning) => setWarning(w));
@@ -72,107 +78,80 @@ export function ChatInterface({
     }
   });
 
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-emoji-picker]')) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageText.trim()) return;
 
     try {
-      await onSendMessage(messageText.trim());
+      await onSendMessage(messageText.trim(), replyTo || undefined);
       setMessageText('');
+      setReplyTo(null);
     } catch (error: any) {
-      toast({
-        title: "Failed to send message",
-        description: error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Failed to send message", description: error.message, variant: "destructive" });
     }
   };
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!roomName.trim()) return;
-
     try {
       await onCreateRoom(roomName.trim());
       setRoomName('');
       setShowCreateRoom(false);
-      toast({
-        title: "Room Created",
-        description: `Room "${roomName}" has been created`
-      });
+      toast({ title: "Room Created", description: `"${roomName}" created` });
     } catch (error: any) {
-      toast({
-        title: "Failed to create room",
-        description: error.message,
-        variant: "destructive"
-      });
+      toast({ title: "Failed to create room", description: error.message, variant: "destructive" });
     }
   };
 
   const handleOpenLogs = async () => {
     try {
       const response = await socketManager.getLogs();
-      if (response.ok) {
-        setLogs(response.logs || []);
-        setShowLogs(true);
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load logs",
-        variant: "destructive"
-      });
+      if (response.ok) { setLogs(response.logs || []); setShowLogs(true); }
+    } catch {
+      toast({ title: "Error", description: "Failed to load logs", variant: "destructive" });
     }
   };
 
   const handleOpenBans = async () => {
     try {
       const response = await socketManager.getBans();
-      if (response.ok) {
-        setBans(response.bans || {});
-        setShowBans(true);
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load bans",
-        variant: "destructive"
-      });
+      if (response.ok) { setBans(response.bans || {}); setShowBans(true); }
+    } catch {
+      toast({ title: "Error", description: "Failed to load bans", variant: "destructive" });
     }
   };
 
   const handleWarnUser = async (email: string, reason: string) => {
     const response = await socketManager.warnUser(email, reason);
-    if (!response.ok) {
-      throw new Error(response.err || 'Failed to warn user');
-    }
+    if (!response.ok) throw new Error(response.err || 'Failed to warn user');
   };
 
   const handleBanUser = async (email: string, reason: string) => {
     const response = await socketManager.banUser(email, reason);
-    if (!response.ok) {
-      throw new Error(response.err || 'Failed to ban user');
-    }
+    if (!response.ok) throw new Error(response.err || 'Failed to ban user');
   };
 
   const handleUnbanUser = async (email: string) => {
     try {
       await socketManager.unbanUser(email);
-      // Refresh bans list
       const response = await socketManager.getBans();
-      if (response.ok) {
-        setBans(response.bans || {});
-      }
-      toast({
-        title: "User Unbanned",
-        description: `${email} has been unbanned`
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to unban user",
-        variant: "destructive"
-      });
+      if (response.ok) setBans(response.bans || {});
+      toast({ title: "User Unbanned", description: `${email} has been unbanned` });
+    } catch {
+      toast({ title: "Error", description: "Failed to unban user", variant: "destructive" });
     }
   };
 
@@ -180,36 +159,15 @@ export function ChatInterface({
     try {
       const response = await fetch('/api/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: user.email,
-          ...updates
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, ...updates }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
-
+      if (!response.ok) throw new Error('Failed to update profile');
       const result = await response.json();
-      
-      // If profile was successfully updated, update the user state directly
-      if (result.success && result.updated && result.user) {
-        // Update the user state with the new data
+      if (result.success && result.user) {
         onUpdateUser?.(result.user);
-        
-        // Update the socket user data as well
-        const socket = socketManager.getSocket();
-        if (socket) {
-          (socket as any).data = { ...(socket as any).data, user: result.user };
-        }
-        
-        console.log('✅ Profile updated locally:', result.user);
       }
     } catch (error) {
-      console.error('Error updating profile:', error);
       throw error;
     }
   };
@@ -218,195 +176,193 @@ export function ChatInterface({
     try {
       await socketManager.ackWarning();
       setWarning(null);
-      toast({
-        title: "Warning Acknowledged",
-        description: "You can now continue chatting"
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to acknowledge warning",
-        variant: "destructive"
-      });
+      toast({ title: "Warning Acknowledged" });
+    } catch {
+      toast({ title: "Error", description: "Failed to acknowledge warning", variant: "destructive" });
     }
-  };
-
-  const handleOpenBroadcast = () => {
-    setShowBroadcast(true);
-  };
-
-  const handleOpenPasswords = () => {
-    setShowPasswords(true);
   };
 
   const handleSendBroadcast = async (message: string) => {
     setBroadcastLoading(true);
     try {
       const socket = socketManager.getSocket();
-      if (!socket) {
-        setBroadcastLoading(false);
-        toast({
-          title: "Error",
-          description: "Not connected to server.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      socket.emit('createBroadcast', { message }, (response: any) => {
+      socket?.emit('createBroadcast', { message }, (response: any) => {
         setBroadcastLoading(false);
         if (response.ok) {
-          toast({
-            title: "Broadcast sent",
-            description: "Your announcement has been broadcast to all users.",
-          });
+          toast({ title: "Broadcast sent" });
         } else {
-          toast({
-            title: "Error",
-            description: "Failed to send broadcast.",
-            variant: "destructive",
-          });
+          toast({ title: "Error", description: "Failed to send broadcast.", variant: "destructive" });
         }
       });
-    } catch (error) {
+    } catch {
       setBroadcastLoading(false);
-      toast({
-        title: "Error",
-        description: "Failed to send broadcast.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to send broadcast.", variant: "destructive" });
     }
   };
 
-  return (
-    <div className="w-full h-full flex flex-col" data-testid="chat-interface">
-      {/* Announcement Banner at the very top */}
-      <AnnouncementBanner socketManager={socketManager} />
-      
-      <div className="flex-1 flex">
-      <Sidebar
-        user={user}
-        rooms={rooms}
-        currentRoom={currentRoom}
-        onRoomSwitch={onRoomSwitch}
-        onCreateRoom={() => setShowCreateRoom(true)}
-        onOpenLogs={handleOpenLogs}
-        onOpenBans={handleOpenBans}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenBroadcast={handleOpenBroadcast}
-        onOpenPasswords={handleOpenPasswords}
-        directConversations={directConversations}
-        onLoadDirectConversations={onLoadDirectConversations}
-        onStartDirectChat={onStartDirectChat}
-        onStartDirectConversationByEmail={onStartDirectConversationByEmail}
-        currentDirectChat={currentDirectChat}
-      />
+  const insertEmoji = (emoji: string) => {
+    const input = inputRef.current;
+    if (!input) {
+      setMessageText(prev => prev + emoji);
+    } else {
+      const start = input.selectionStart ?? messageText.length;
+      const end = input.selectionEnd ?? messageText.length;
+      const newText = messageText.slice(0, start) + emoji + messageText.slice(end);
+      setMessageText(newText);
+      setTimeout(() => {
+        input.focus();
+        input.setSelectionRange(start + emoji.length, start + emoji.length);
+      }, 10);
+    }
+    setShowEmojiPicker(false);
+  };
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-full max-h-full">
-        {/* Chat Header */}
-        <div className="p-4 border-b border-border bg-card/50 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Hash className="text-muted-foreground h-5 w-5" />
-              <h2 className="text-lg font-semibold" data-testid="text-current-room">
-                {currentRoom}
-              </h2>
-              <span className="text-sm text-muted-foreground">
-                {connected ? 'Connected' : 'Disconnected'}
+  // Determine the chat header
+  const chatHeader = currentDirectChat
+    ? directConversations?.find(c => c.userId === currentDirectChat)?.username || 'Direct Message'
+    : currentRoom;
+
+  return (
+    <div className="w-full h-screen flex flex-col overflow-hidden" data-testid="chat-interface">
+      <AnnouncementBanner socketManager={socketManager} />
+
+      <div className="flex-1 flex min-h-0">
+        <Sidebar
+          user={user}
+          rooms={rooms}
+          currentRoom={currentRoom}
+          onRoomSwitch={onRoomSwitch}
+          onCreateRoom={() => setShowCreateRoom(true)}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenPanel={() => setShowAdminPanel(true)}
+          directConversations={directConversations}
+          onLoadDirectConversations={onLoadDirectConversations}
+          onStartDirectChat={onStartDirectChat}
+          onStartDMByUsername={onStartDMByUsername}
+          currentDirectChat={currentDirectChat}
+        />
+
+        {/* Main Chat Area */}
+        <div className="flex-1 flex flex-col min-w-0 h-full">
+          {/* Chat Header */}
+          <div className="px-4 py-3 border-b border-border bg-card/50 flex-shrink-0">
+            <div className="flex items-center space-x-2">
+              {currentDirectChat ? (
+                <MessageCircle className="h-5 w-5 text-muted-foreground" />
+              ) : (
+                <Hash className="h-5 w-5 text-muted-foreground" />
+              )}
+              <h2 className="text-base font-semibold" data-testid="text-current-room">{chatHeader}</h2>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${connected ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                {connected ? 'Online' : 'Offline'}
               </span>
             </div>
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm">
-                <Users className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
-        </div>
 
-        {/* Messages Area */}
-        <div className="flex-1">
-          <MessageList messages={messages} currentUserEmail={user.email} />
-        </div>
+          {/* Messages - fills remaining space and scrolls */}
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+            <MessageList messages={messages} currentUserEmail={user.email} onReply={setReplyTo} />
+          </div>
 
-        {/* Message Input */}
-        <div className="p-4 border-t border-border bg-card/50 flex-shrink-0">
-          <form onSubmit={handleSendMessage} className="flex space-x-3">
-            <div className="flex-1 relative">
-              <Input
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Type a message... 😊 Try typing emojis!"
-                className="pr-12"
-                maxLength={1000}
-                disabled={!connected}
-                data-testid="input-message"
-                style={{ 
-                  fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif'
-                }}
-              />
-              <Button 
-                type="button" 
-                variant="ghost" 
-                size="sm" 
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-              >
-                <Smile className="h-4 w-4" />
-              </Button>
+          {/* Reply preview */}
+          {replyTo && (
+            <div className="px-4 py-2 bg-muted/50 border-t border-border flex items-center space-x-3 flex-shrink-0">
+              <Reply className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-medium text-primary">{replyTo.display}</span>
+                <p className="text-xs text-muted-foreground truncate">{replyTo.text}</p>
+              </div>
+              <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <Button 
-              type="submit" 
-              disabled={!messageText.trim() || !connected}
-              data-testid="button-send-message"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
+          )}
+
+          {/* Message Input */}
+          <div className="p-3 border-t border-border bg-card/50 flex-shrink-0">
+            <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+              <div className="flex-1 relative" data-emoji-picker>
+                <Input
+                  ref={inputRef}
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder={replyTo ? `Reply to ${replyTo.display}...` : `Message ${currentDirectChat ? chatHeader : '#' + currentRoom}`}
+                  className="pr-10"
+                  maxLength={1000}
+                  disabled={!connected}
+                  data-testid="input-message"
+                  style={{ fontFamily: 'system-ui, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif' }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                  onClick={() => setShowEmojiPicker(p => !p)}
+                >
+                  <Smile className="h-4 w-4 text-muted-foreground" />
+                </Button>
+
+                {/* Emoji Picker Dropdown */}
+                {showEmojiPicker && (
+                  <div className="absolute bottom-full right-0 mb-2 bg-card border border-border rounded-lg shadow-xl p-3 z-50 w-72">
+                    <div className="grid grid-cols-10 gap-1">
+                      {COMMON_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="text-xl hover:bg-muted rounded p-0.5 transition-colors leading-none"
+                          onClick={() => insertEmoji(emoji)}
+                          title={emoji}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!messageText.trim() || !connected}
+                data-testid="button-send-message"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
 
       {/* Create Room Modal */}
       <Dialog open={showCreateRoom} onOpenChange={setShowCreateRoom}>
         <DialogContent data-testid="modal-create-room">
-          <DialogHeader>
-            <DialogTitle>Create New Room</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Create New Room</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateRoom}>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="roomName">Room Name</Label>
-                <Input
-                  id="roomName"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="awesome-room"
-                  className="mt-2"
-                  data-testid="input-room-name"
-                />
+                <Input id="roomName" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="my-room" className="mt-2" data-testid="input-room-name" />
               </div>
             </div>
             <DialogFooter className="mt-6">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => setShowCreateRoom(false)}
-              >
-                Cancel
-              </Button>
-              <Button 
-                type="submit" 
-                disabled={!roomName.trim()}
-                data-testid="button-create-room-submit"
-              >
-                Create Room
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowCreateRoom(false)}>Cancel</Button>
+              <Button type="submit" disabled={!roomName.trim()} data-testid="button-create-room-submit">Create Room</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Admin Panel Popup */}
+      <AdminPanel
+        user={user}
+        isOpen={showAdminPanel}
+        onClose={() => setShowAdminPanel(false)}
+        socketManager={socketManager}
+        onOpenBroadcast={() => setShowBroadcast(true)}
+        onOpenPasswords={() => setShowPasswords(true)}
+      />
 
       {/* Admin Modals */}
       <AdminModals
@@ -426,7 +382,6 @@ export function ChatInterface({
         onAckWarning={handleAckWarning}
       />
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
@@ -434,7 +389,6 @@ export function ChatInterface({
         onUpdateProfile={handleUpdateProfile}
       />
 
-      {/* Broadcast Modal */}
       <BroadcastModal
         open={showBroadcast}
         onOpenChange={setShowBroadcast}
@@ -442,13 +396,11 @@ export function ChatInterface({
         isLoading={broadcastLoading}
       />
 
-      {/* Password Modal */}
       <PasswordModal
         open={showPasswords}
         onOpenChange={setShowPasswords}
         socketManager={socketManager}
       />
-      </div>
     </div>
   );
 }

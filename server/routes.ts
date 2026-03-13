@@ -219,6 +219,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             cb && cb({ ok: false, reason: 'invalid-password', message: 'Incorrect password' });
             return;
           }
+          // If username was provided, verify it matches the stored username
+          if (usernameReq && usernameReq.toLowerCase() !== user.username.toLowerCase()) {
+            cb && cb({ ok: false, reason: 'username-mismatch', message: 'Incorrect username for this email address' });
+            return;
+          }
           // Update role if they're now an owner or admin
           const lowerEmail = email.toLowerCase();
           if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(lowerEmail)) {
@@ -324,11 +329,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!text) return cb && cb({ ok: false, err: 'empty' });
 
       const display = (user.role === 'owner') ? `${user.username} [OWNER]` : (user.role === 'admin') ? `${user.username} [ADMIN]` : user.username;
-      const msg = { display, text, email: user.email, role: user.role, profileImageUrl: user.profileImageUrl, ts: Date.now() };
+      const replyTo = payload.replyTo ? {
+        display: payload.replyTo.display,
+        text: payload.replyTo.text,
+        email: payload.replyTo.email
+      } : undefined;
+      const msg: any = { display, text, email: user.email, role: user.role, profileImageUrl: user.profileImageUrl, ts: Date.now() };
+      if (replyTo) msg.replyTo = replyTo;
 
       if (!messages[room]) messages[room] = [];
       messages[room].push(msg);
-      messageLogs.push(Object.assign({ room }, msg));
+      messageLogs.push(Object.assign({ room, username: user.username }, msg));
 
       // keep logs reasonable - trim
       if (messageLogs.length > 2000) messageLogs.splice(0, messageLogs.length - 2000);
@@ -542,6 +553,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error getting direct messages:', error);
         cb && cb({ ok: false, err: 'server-error' });
       }
+    });
+
+    // Start direct conversation by username
+    socket.on('startDMByUsername', async (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      
+      const { username } = data;
+      if (!username) return cb && cb({ ok: false, err: 'missing-username' });
+      
+      try {
+        const targetUser = Object.values(usersByEmail).find(
+          (u: any) => u.username.toLowerCase() === username.toLowerCase()
+        ) as any;
+        
+        if (!targetUser) {
+          return cb && cb({ ok: false, err: 'user-not-found', message: 'No user found with this username' });
+        }
+        if (targetUser.email === user.email) {
+          return cb && cb({ ok: false, err: 'self-message', message: 'You cannot message yourself' });
+        }
+        cb && cb({ ok: true, data: { user: { id: targetUser.email, username: targetUser.username, email: targetUser.email, profileImageUrl: targetUser.profileImageUrl } } });
+      } catch (error) {
+        cb && cb({ ok: false, err: 'server-error' });
+      }
+    });
+
+    // Get list of admins (owner only)
+    socket.on('getAdmins', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'not-owner' });
+      const adminUsers = adminList.emails.map((email: string) => ({
+        email,
+        username: (usersByEmail[email] as any)?.username || email
+      }));
+      cb && cb({ ok: true, admins: adminUsers });
+    });
+
+    // Set or remove admin (owner only)
+    socket.on('setAdmin', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'not-owner' });
+      
+      const { identifier, action } = data;
+      if (!identifier || !action) return cb && cb({ ok: false, err: 'missing-data' });
+      
+      // Find user by email or username
+      let targetUser: any = usersByEmail[identifier.toLowerCase()];
+      if (!targetUser) {
+        targetUser = Object.values(usersByEmail).find(
+          (u: any) => u.username.toLowerCase() === identifier.toLowerCase()
+        );
+      }
+      
+      if (!targetUser) {
+        return cb && cb({ ok: false, err: 'user-not-found', message: 'No user found with that email or username' });
+      }
+      if (ownerList.emails.map((e: string) => e.toLowerCase()).includes(targetUser.email.toLowerCase())) {
+        return cb && cb({ ok: false, err: 'is-owner', message: 'Cannot change role of an owner' });
+      }
+      
+      if (action === 'add') {
+        if (!adminList.emails.includes(targetUser.email)) {
+          adminList.emails.push(targetUser.email);
+        }
+        targetUser.role = 'admin';
+      } else {
+        adminList.emails = adminList.emails.filter((e: string) => e !== targetUser.email);
+        targetUser.role = 'user';
+      }
+      saveAll();
+      
+      const adminUsers = adminList.emails.map((email: string) => ({
+        email,
+        username: (usersByEmail[email] as any)?.username || email
+      }));
+      cb && cb({ ok: true, admins: adminUsers });
     });
 
     // Start direct conversation by email

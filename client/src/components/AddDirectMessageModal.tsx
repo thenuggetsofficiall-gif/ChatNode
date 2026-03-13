@@ -8,50 +8,31 @@ import { useToast } from '@/hooks/use-toast';
 interface AddDirectMessageModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onStartConversation: (email: string) => Promise<void>;
+  onStartConversation: (username: string) => Promise<void>;
 }
 
 export function AddDirectMessageModal({ isOpen, onClose, onStartConversation }: AddDirectMessageModalProps) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter an email address.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast({
-        title: "Error",
-        description: "Please enter a valid email address.",
-        variant: "destructive",
-      });
+    if (!username.trim()) {
+      toast({ title: "Error", description: "Please enter a username.", variant: "destructive" });
       return;
     }
 
     setLoading(true);
     try {
-      await onStartConversation(email.trim());
-      setEmail('');
+      await onStartConversation(username.trim());
+      setUsername('');
       onClose();
-      toast({
-        title: "Success",
-        description: "Direct message conversation started!",
-      });
     } catch (error) {
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to start conversation.",
+        title: "User Not Found",
+        description: error instanceof Error ? error.message : "No user found with that username.",
         variant: "destructive",
       });
     } finally {
@@ -60,7 +41,7 @@ export function AddDirectMessageModal({ isOpen, onClose, onStartConversation }: 
   };
 
   const handleClose = () => {
-    setEmail('');
+    setUsername('');
     onClose();
   };
 
@@ -68,42 +49,33 @@ export function AddDirectMessageModal({ isOpen, onClose, onStartConversation }: 
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md" data-testid="modal-add-direct-message">
         <DialogHeader>
-          <DialogTitle>Start Direct Message</DialogTitle>
+          <DialogTitle>New Direct Message</DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="Enter user's email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              placeholder="Search by username..."
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               disabled={loading}
-              data-testid="input-email"
+              autoFocus
+              data-testid="input-username"
             />
             <p className="text-sm text-muted-foreground">
-              Enter the email address of a registered user to start a conversation.
+              Enter the exact username of a registered user.
             </p>
           </div>
           
           <DialogFooter className="space-x-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={loading}
-              data-testid="button-cancel"
-            >
+            <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={loading || !email.trim()}
-              data-testid="button-start-conversation"
-            >
-              {loading ? "Starting..." : "Start Conversation"}
+            <Button type="submit" disabled={loading || !username.trim()} data-testid="button-start-conversation">
+              {loading ? "Searching..." : "Start Chat"}
             </Button>
           </DialogFooter>
         </form>
