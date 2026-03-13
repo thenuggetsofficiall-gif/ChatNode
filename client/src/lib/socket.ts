@@ -127,7 +127,7 @@ class SocketManager {
   }
 
   // Direct Message methods
-  getDirectConversations(): Promise<SocketResponse<{ conversations: DirectConversation[] }>> {
+  getDirectConversations(): Promise<SocketResponse> {
     return new Promise((resolve) => {
       this.socket?.emit('getDirectConversations', (response: SocketResponse) => {
         resolve(response);
@@ -135,31 +135,31 @@ class SocketManager {
     });
   }
 
-  getDirectMessages(otherUserId: string): Promise<SocketResponse<{ messages: DirectMessage[] }>> {
+  getDirectMessages(otherEmail: string): Promise<SocketResponse> {
     return new Promise((resolve) => {
-      this.socket?.emit('getDirectMessages', { otherUserId }, (response: SocketResponse) => {
+      this.socket?.emit('getDirectMessages', { otherEmail }, (response: SocketResponse) => {
         resolve(response);
       });
     });
   }
 
-  sendDirectMessage(toUserId: string, message: string): Promise<SocketResponse> {
+  sendDirectMessage(toEmail: string, text: string): Promise<SocketResponse> {
     return new Promise((resolve) => {
-      this.socket?.emit('sendDirectMessage', { toUserId, message }, (response: SocketResponse) => {
+      this.socket?.emit('sendDirectMessage', { toEmail, text }, (response: SocketResponse) => {
         resolve(response);
       });
     });
   }
 
-  startDirectConversationByEmail(email: string): Promise<SocketResponse<{ user: any }>> {
+  markDMRead(otherEmail: string): Promise<SocketResponse> {
     return new Promise((resolve) => {
-      this.socket?.emit('startDirectConversationByEmail', { email }, (response: SocketResponse) => {
+      this.socket?.emit('markDMRead', { otherEmail }, (response: SocketResponse) => {
         resolve(response);
       });
     });
   }
 
-  startDMByUsername(username: string): Promise<SocketResponse<{ user: any }>> {
+  startDMByUsername(username: string): Promise<SocketResponse> {
     return new Promise((resolve) => {
       this.socket?.emit('startDMByUsername', { username }, (response: SocketResponse) => {
         resolve(response);

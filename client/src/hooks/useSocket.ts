@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { socketManager } from '@/lib/socket';
 import type { User, Message, Warning, Ban, DirectMessage, DirectConversation } from '@/types/chat';
 
@@ -9,15 +9,25 @@ export function useSocket() {
   const [currentRoom, setCurrentRoom] = useState('General');
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [directConversations, setDirectConversations] = useState<DirectConversation[]>([]);
+  // key = otherEmail, value = array of DM messages
   const [directMessages, setDirectMessages] = useState<Record<string, DirectMessage[]>>({});
   const [currentDirectChat, setCurrentDirectChat] = useState<string | null>(null);
+  // Ref to access current user email inside socket handlers without stale closures
+  const userEmailRef = useRef<string | null>(null);
+
+  const loadDirectConversations = useCallback(async () => {
+    const response = await socketManager.getDirectConversations();
+    if (response.ok && response.conversations) {
+      setDirectConversations(response.conversations);
+    }
+  }, []);
 
   useEffect(() => {
     const socket = socketManager.connect();
 
     const handleConnect = () => setConnected(true);
     const handleDisconnect = () => setConnected(false);
-    
+
     const handleMessage = (data: { room: string; msg: Message }) => {
       setMessages(prev => ({
         ...prev,
@@ -25,24 +35,20 @@ export function useSocket() {
       }));
     };
 
-    const handleRooms = (roomList: string[]) => {
-      setRooms(roomList);
-    };
+    const handleRooms = (roomList: string[]) => setRooms(roomList);
 
-    const handleDirectMessage = (message: DirectMessage) => {
-      setDirectMessages(prev => {
-        // We'll use the conversation partner's userId as the key
-        const conversationId = message.fromUser?.id || message.toUser?.id || message.fromUserId;
-        return {
-          ...prev,
-          [conversationId]: [...(prev[conversationId] || []), message]
-        };
+    // Incoming real-time DM from another user (or our own message on another tab)
+    const handleDirectMessage = (msg: DirectMessage) => {
+      // Figure out which conversation this belongs to
+      const myEmail = userEmailRef.current;
+      const otherEmail = msg.fromEmail === myEmail ? msg.toEmail : msg.fromEmail;
+      setDirectMessages(prevMsgs => {
+        const existing = prevMsgs[otherEmail] || [];
+        if (existing.some(m => m.id === msg.id)) return prevMsgs;
+        return { ...prevMsgs, [otherEmail]: [...existing, msg] };
       });
-      
-      // Refresh conversations to show the new message
-      if (user) {
-        loadDirectConversations();
-      }
+      // Refresh conversation list to update last message + unread badge
+      loadDirectConversations();
     };
 
     socketManager.onConnect(handleConnect);
@@ -58,23 +64,20 @@ export function useSocket() {
       socketManager.off('rooms', handleRooms);
       socketManager.off('directMessage', handleDirectMessage);
     };
-  }, [user]);
+  }, [loadDirectConversations]);
 
   const join = async (email: string, password: string, username?: string) => {
     const response = await socketManager.join(email, password, username);
     if (response.ok && response.user) {
       setUser(response.user);
-      if (response.rooms) {
-        setRooms(response.rooms);
-      }
+      userEmailRef.current = response.user.email;
+      if (response.rooms) setRooms(response.rooms);
       console.log('✅ User authenticated and loaded:', response.user);
     }
     return response;
   };
 
-  const updateUser = (updatedUser: User) => {
-    setUser(updatedUser);
-  };
+  const updateUser = (updatedUser: User) => setUser(updatedUser);
 
   const sendMessage = async (text: string, replyTo?: any) => {
     return socketManager.sendMessage(currentRoom, text, replyTo);
@@ -85,88 +88,91 @@ export function useSocket() {
     if (!messages[room]) {
       const response = await socketManager.getMessages(room);
       if (response.ok && response.messages) {
-        setMessages(prev => ({
-          ...prev,
-          [room]: response.messages || []
-        }));
+        setMessages(prev => ({ ...prev, [room]: response.messages || [] }));
       }
     }
   };
 
-  const createRoom = async (roomName: string) => {
-    return socketManager.createRoom(roomName);
-  };
+  const createRoom = async (roomName: string) => socketManager.createRoom(roomName);
 
-  const loadDirectConversations = async () => {
-    if (!user) return;
-    const response = await socketManager.getDirectConversations();
-    if (response.ok && response.conversations) {
-      setDirectConversations(response.conversations);
-    }
-  };
+  // Open a DM conversation with someone by their email
+  const startDirectChat = async (otherEmail: string) => {
+    setCurrentDirectChat(otherEmail);
+    setCurrentRoom('');
 
-  const startDirectChat = async (otherUserId: string) => {
-    setCurrentDirectChat(otherUserId);
-    setCurrentRoom(''); // Clear current room when switching to DM
-    
-    if (!directMessages[otherUserId]) {
-      const response = await socketManager.getDirectMessages(otherUserId);
-      if (response.ok && response.data && response.data.messages) {
-        setDirectMessages(prev => ({
-          ...prev,
-          [otherUserId]: response.data!.messages || []
-        }));
+    // Mark as read
+    socketManager.markDMRead(otherEmail);
+    setDirectConversations(prev =>
+      prev.map(c => c.userId === otherEmail ? { ...c, unread: 0 } : c)
+    );
+
+    // Load messages if not already loaded
+    if (!directMessages[otherEmail]) {
+      const response = await socketManager.getDirectMessages(otherEmail);
+      if (response.ok && (response as any).messages) {
+        setDirectMessages(prev => ({ ...prev, [otherEmail]: (response as any).messages as DirectMessage[] }));
       }
     }
   };
 
-  const startDirectConversationByEmail = async (email: string) => {
-    if (!user) throw new Error('User not authenticated');
-    
-    const response = await socketManager.startDirectConversationByEmail(email);
-    if (response.ok && response.data && response.data.user) {
-      await startDirectChat(response.data.user.id);
-      await loadDirectConversations();
-    } else {
-      throw new Error((response as any).message || 'Failed to start conversation');
-    }
-  };
-
+  // Start DM by searching username - returns target user's email
   const startDMByUsername = async (username: string) => {
-    if (!user) throw new Error('User not authenticated');
-    
     const response = await socketManager.startDMByUsername(username);
-    if (response.ok && response.data && response.data.user) {
-      await startDirectChat(response.data.user.id);
-      await loadDirectConversations();
+    if (response.ok && response.data?.user?.email) {
+      const targetEmail = response.data.user.email;
+      const targetUsername = response.data.user.username;
+
+      // Create conversation entry if it doesn't exist yet
+      setDirectConversations(prev => {
+        if (prev.find(c => c.userId === targetEmail)) return prev;
+        return [{ userId: targetEmail, username: targetUsername, lastMessage: '', timestamp: new Date(0), unread: 0 }, ...prev];
+      });
+
+      // Also register in dmMessages so messages load
+      setDirectMessages(prev => prev[targetEmail] ? prev : { ...prev, [targetEmail]: [] });
+
+      await startDirectChat(targetEmail);
     } else {
       throw new Error((response as any).message || 'No user found with that username');
     }
   };
 
-  const sendDirectMessage = async (text: string, toUserId: string) => {
-    return socketManager.sendDirectMessage(toUserId, text);
+  const sendDirectMessage = async (text: string, toEmail: string) => {
+    const response = await socketManager.sendDirectMessage(toEmail, text);
+    if (response.ok && (response as any).message) {
+      const msg: DirectMessage = (response as any).message;
+      setDirectMessages(prev => ({
+        ...prev,
+        [toEmail]: [...(prev[toEmail] || []), msg]
+      }));
+      // Update conversation last message
+      setDirectConversations(prev =>
+        prev.map(c => c.userId === toEmail
+          ? { ...c, lastMessage: msg.text, timestamp: new Date(msg.ts) }
+          : c
+        )
+      );
+    }
+    return response;
   };
 
   const switchToRoom = (room: string) => {
-    setCurrentDirectChat(null); // Clear direct chat when switching to room
+    setCurrentDirectChat(null);
     switchRoom(room);
   };
 
-  // Convert direct messages to unified format
-  const getUnifiedMessages = () => {
+  // Build the unified message list for the current view
+  const getUnifiedMessages = (): any[] => {
     if (currentDirectChat) {
-      return (directMessages[currentDirectChat] || []).map(dm => ({
+      const dms = directMessages[currentDirectChat] || [];
+      return dms.map(dm => ({
         id: dm.id,
-        display: dm.fromUser?.username || 'Unknown',
-        text: dm.message,
-        email: dm.fromUser?.id || dm.fromUserId,
+        display: dm.fromUsername,
+        text: dm.text,
+        email: dm.fromEmail,
         role: 'user',
-        profileImageUrl: dm.fromUser?.profileImageUrl,
-        ts: new Date(dm.timestamp).getTime(),
+        ts: dm.ts,
         isDirect: true,
-        fromUserId: dm.fromUserId,
-        toUserId: dm.toUserId
       }));
     }
     return messages[currentRoom] || [];
@@ -189,7 +195,6 @@ export function useSocket() {
     updateUser,
     loadDirectConversations,
     startDirectChat,
-    startDirectConversationByEmail,
     startDMByUsername,
     sendDirectMessage,
     socketManager

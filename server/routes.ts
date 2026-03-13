@@ -5,7 +5,6 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { ObjectStorageService, ObjectNotFoundError } from './objectStorage';
-import { storage } from './storage';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -69,6 +68,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let adminList = loadJSON('admins.json', { emails: [] });
   let currentBroadcast = loadJSON('broadcast.json', null);
   let userDismissals = loadJSON('dismissals.json', {});
+  // DM storage: key = sorted "email1||email2", value = array of { id, fromEmail, toEmail, fromUsername, text, ts }
+  let dmMessages = loadJSON('dm_messages.json', {});
+  // Unread: { recipientEmail: { senderEmail: count } }
+  let unreadDMs = loadJSON('unread_dms.json', {});
+  // Track connected sockets by email for real-time DM delivery
+  const connectedByEmail: Record<string, Set<string>> = {};
 
   const saveAll = () => {
     saveJSON('users.json', usersByEmail);
@@ -81,7 +86,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('admins.json', adminList);
     saveJSON('broadcast.json', currentBroadcast);
     saveJSON('dismissals.json', userDismissals);
+    saveJSON('dm_messages.json', dmMessages);
+    saveJSON('unread_dms.json', unreadDMs);
   };
+
+  const dmKey = (emailA: string, emailB: string) =>
+    [emailA.toLowerCase(), emailB.toLowerCase()].sort().join('||');
 
   // API routes with error handling
   app.get('/api/config', (req, res) => {
@@ -256,6 +266,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // attach to socket
         (socket as any).data.user = user;
+
+        // Track connected socket by email for DM delivery
+        if (!connectedByEmail[email]) connectedByEmail[email] = new Set();
+        connectedByEmail[email].add(socket.id);
 
         // Send any unacknowledged warnings (only if not expired)
         const userWarnings = warnings[email] || [];
@@ -525,59 +539,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cb && cb({ ok: true });
     });
 
-    // Direct Message Events
-    socket.on('getDirectConversations', async (cb) => {
-      const user = (socket as any).data.user;
-      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-      
-      try {
-        const conversations = await storage.getDirectConversations(user.id);
-        cb && cb({ ok: true, conversations });
-      } catch (error) {
-        console.error('Error getting direct conversations:', error);
-        cb && cb({ ok: false, err: 'server-error' });
-      }
-    });
+    // ── Direct Message Events (file-based, email-keyed) ──
 
-    socket.on('getDirectMessages', async (data, cb) => {
+    // Search user by username to start a DM
+    socket.on('startDMByUsername', (data, cb) => {
       const user = (socket as any).data.user;
       if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-      
-      const { otherUserId } = data;
-      if (!otherUserId) return cb && cb({ ok: false, err: 'missing-user-id' });
-      
-      try {
-        const messages = await storage.getDirectMessages(user.id, otherUserId);
-        cb && cb({ ok: true, messages });
-      } catch (error) {
-        console.error('Error getting direct messages:', error);
-        cb && cb({ ok: false, err: 'server-error' });
-      }
-    });
-
-    // Start direct conversation by username
-    socket.on('startDMByUsername', async (data, cb) => {
-      const user = (socket as any).data.user;
-      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-      
-      const { username } = data;
+      const { username } = data || {};
       if (!username) return cb && cb({ ok: false, err: 'missing-username' });
-      
-      try {
-        const targetUser = Object.values(usersByEmail).find(
-          (u: any) => u.username.toLowerCase() === username.toLowerCase()
-        ) as any;
-        
-        if (!targetUser) {
-          return cb && cb({ ok: false, err: 'user-not-found', message: 'No user found with this username' });
+
+      const target = Object.values(usersByEmail).find(
+        (u: any) => u.username.toLowerCase() === username.trim().toLowerCase()
+      ) as any;
+      if (!target) return cb && cb({ ok: false, err: 'user-not-found', message: 'No user found with that username' });
+      if (target.email === user.email) return cb && cb({ ok: false, err: 'self-message', message: 'You cannot message yourself' });
+
+      cb && cb({ ok: true, data: { user: { email: target.email, username: target.username, profileImageUrl: target.profileImageUrl } } });
+    });
+
+    // Get all DM conversations for current user
+    socket.on('getDirectConversations', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+
+      const myEmail = user.email.toLowerCase();
+      const seen = new Set<string>();
+      const convs: any[] = [];
+
+      for (const key of Object.keys(dmMessages)) {
+        const parts = key.split('||');
+        if (!parts.includes(myEmail)) continue;
+        const otherEmail = parts[0] === myEmail ? parts[1] : parts[0];
+        if (seen.has(otherEmail)) continue;
+        seen.add(otherEmail);
+
+        const msgs: any[] = dmMessages[key] || [];
+        if (msgs.length === 0) {
+          // Still include conversations with no messages (just started)
+          const otherUser = usersByEmail[otherEmail] as any;
+          const unread = (unreadDMs[myEmail] || {})[otherEmail] || 0;
+          convs.push({
+            userId: otherEmail,
+            username: otherUser?.username || otherEmail,
+            lastMessage: '',
+            timestamp: new Date(0),
+            unread
+          });
+          continue;
         }
-        if (targetUser.email === user.email) {
-          return cb && cb({ ok: false, err: 'self-message', message: 'You cannot message yourself' });
-        }
-        cb && cb({ ok: true, data: { user: { id: targetUser.email, username: targetUser.username, email: targetUser.email, profileImageUrl: targetUser.profileImageUrl } } });
-      } catch (error) {
-        cb && cb({ ok: false, err: 'server-error' });
+
+        const last = msgs[msgs.length - 1];
+        const otherUser = usersByEmail[otherEmail] as any;
+        const unread = (unreadDMs[myEmail] || {})[otherEmail] || 0;
+        convs.push({
+          userId: otherEmail,
+          username: otherUser?.username || otherEmail,
+          lastMessage: last.text,
+          timestamp: new Date(last.ts),
+          unread
+        });
       }
+
+      convs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      cb && cb({ ok: true, conversations: convs });
+    });
+
+    // Get messages between current user and another user by email
+    socket.on('getDirectMessages', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      const { otherEmail } = data || {};
+      if (!otherEmail) return cb && cb({ ok: false, err: 'missing-email' });
+
+      const key = dmKey(user.email, otherEmail);
+      const msgs = dmMessages[key] || [];
+      cb && cb({ ok: true, messages: msgs });
+    });
+
+    // Mark DMs from a user as read
+    socket.on('markDMRead', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      const { otherEmail } = data || {};
+      if (!otherEmail) return cb && cb({ ok: false, err: 'missing-email' });
+
+      if (unreadDMs[user.email]) {
+        delete unreadDMs[user.email][otherEmail.toLowerCase()];
+        saveAll();
+      }
+      cb && cb({ ok: true });
+    });
+
+    // Send a direct message
+    socket.on('sendDirectMessage', (data, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      if (bans[user.email]) return cb && cb({ ok: false, err: 'banned' });
+
+      // Check for unacked warnings
+      const now = Date.now();
+      const oneHour = 60 * 60 * 1000;
+      const userWarnings = warnings[user.email] || [];
+      const validWarnings = userWarnings.filter((w: any) => (now - w.ts) < oneHour);
+      if (validWarnings.length !== userWarnings.length) {
+        warnings[user.email] = validWarnings;
+      }
+      const unacked = validWarnings.some((w: any) => !w.acknowledged);
+      if (unacked) return cb && cb({ ok: false, err: 'warning' });
+
+      const { toEmail, text } = data || {};
+      if (!toEmail || !String(text || '').trim()) return cb && cb({ ok: false, err: 'missing-data' });
+
+      const targetUser = usersByEmail[toEmail.toLowerCase()] as any;
+      if (!targetUser) return cb && cb({ ok: false, err: 'user-not-found' });
+
+      const key = dmKey(user.email, toEmail);
+      if (!dmMessages[key]) dmMessages[key] = [];
+
+      const msg = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        fromEmail: user.email,
+        toEmail: toEmail.toLowerCase(),
+        fromUsername: user.username,
+        text: String(text).trim(),
+        ts: Date.now()
+      };
+      dmMessages[key].push(msg);
+
+      // Increment unread count for recipient (if they're not in DM with sender right now)
+      const recipientEmail = toEmail.toLowerCase();
+      if (!unreadDMs[recipientEmail]) unreadDMs[recipientEmail] = {};
+      unreadDMs[recipientEmail][user.email] = (unreadDMs[recipientEmail][user.email] || 0) + 1;
+
+      saveAll();
+
+      // Emit to all recipient sockets
+      const recipientSockets = Array.from(connectedByEmail[recipientEmail] || []);
+      for (const sid of recipientSockets) {
+        io.to(sid).emit('directMessage', msg);
+      }
+
+      // Also emit to sender's other sockets (if open in multiple tabs)
+      const senderSockets = Array.from(connectedByEmail[user.email] || []);
+      for (const sid of senderSockets) {
+        if (sid !== socket.id) io.to(sid).emit('directMessage', msg);
+      }
+
+      cb && cb({ ok: true, message: msg });
     });
 
     // Get list of admins (owner only)
@@ -632,99 +740,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cb && cb({ ok: true, admins: adminUsers });
     });
 
-    // Start direct conversation by email
-    socket.on('startDirectConversationByEmail', async (data, cb) => {
-      const user = (socket as any).data.user;
-      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-      
-      const { email } = data;
-      if (!email) return cb && cb({ ok: false, err: 'missing-email' });
-      
-      try {
-        // Find the target user by email
-        const targetUser = usersByEmail[email.toLowerCase()];
-        if (!targetUser) {
-          return cb && cb({ ok: false, err: 'user-not-found', message: 'User not found with this email address' });
-        }
-
-        // Don't allow messaging yourself
-        if (targetUser.email === user.email) {
-          return cb && cb({ ok: false, err: 'self-message', message: 'You cannot start a conversation with yourself' });
-        }
-
-        // Return the target user info to start the conversation
-        cb && cb({ 
-          ok: true, 
-          user: {
-            id: targetUser.email, // Using email as ID
-            username: targetUser.username,
-            email: targetUser.email,
-            profileImageUrl: targetUser.profileImageUrl
-          }
-        });
-      } catch (error) {
-        console.error('Error starting direct conversation by email:', error);
-        cb && cb({ ok: false, err: 'server-error' });
-      }
-    });
-
-    socket.on('sendDirectMessage', async (data, cb) => {
-      const user = (socket as any).data.user;
-      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-      if (bans[user.email]) return cb && cb({ ok: false, err: 'banned' });
-
-      // Check for unacked warnings
-      const now = Date.now();
-      const oneHour = 60 * 60 * 1000;
-      const userWarnings = warnings[user.email] || [];
-      const validWarnings = userWarnings.filter((w: any) => (now - w.ts) < oneHour);
-      
-      if (validWarnings.length !== userWarnings.length) {
-        warnings[user.email] = validWarnings;
-        saveAll();
-      }
-      
-      const unacked = validWarnings.some((w: any) => !w.acknowledged);
-      if (unacked) return cb && cb({ ok: false, err: 'warning' });
-
-      const { toUserId, message } = data;
-      if (!toUserId || !message?.trim()) {
-        return cb && cb({ ok: false, err: 'missing-data' });
-      }
-
-      try {
-        const directMessage = await storage.createDirectMessage({
-          fromUserId: user.id,
-          toUserId,
-          message: message.trim(),
-        });
-
-        // Find the target user's socket to send them the message
-        const targetUser = await storage.getUser(toUserId);
-        if (targetUser) {
-          // Send to both users (sender and receiver)
-          const messageData = {
-            ...directMessage,
-            fromUser: { id: user.id, username: user.username, profileImageUrl: user.profileImageUrl },
-            toUser: { id: targetUser.id, username: targetUser.username }
-          };
-          
-          // Send to sender
-          socket.emit('directMessage', messageData);
-          
-          // Send to receiver (if they're online)
-          socket.broadcast.emit('directMessage', messageData);
-        }
-
-        cb && cb({ ok: true, message: directMessage });
-      } catch (error) {
-        console.error('Error sending direct message:', error);
-        cb && cb({ ok: false, err: 'server-error' });
-      }
-    });
-
     socket.on('disconnect', () => {
-      // nothing special for now
+      const user = (socket as any).data?.user;
+      if (user?.email) {
+        const sockets = connectedByEmail[user.email];
+        if (sockets) {
+          sockets.delete(socket.id);
+          if (sockets.size === 0) delete connectedByEmail[user.email];
+        }
+      }
     });
   });
 

@@ -52,12 +52,11 @@ export interface Room {
 
 export interface DirectMessage {
   id: string;
-  fromUserId: string;
-  toUserId: string;
-  message: string;
-  timestamp: Date;
-  fromUser?: { id: string; username: string; profileImageUrl?: string };
-  toUser?: { id: string; username: string };
+  fromEmail: string;
+  toEmail: string;
+  fromUsername: string;
+  text: string;
+  ts: number;
 }
 
 export interface DirectConversation {
@@ -65,6 +64,7 @@ export interface DirectConversation {
   username: string;
   lastMessage: string;
   timestamp: Date;
+  unread?: number;
 }
 
 export interface SocketResponse<T = any> {

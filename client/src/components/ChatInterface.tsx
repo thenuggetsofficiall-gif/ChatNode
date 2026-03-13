@@ -27,7 +27,7 @@ interface ChatInterfaceProps {
   onSendMessage: (text: string, replyTo?: Message) => Promise<void>;
   onCreateRoom: (name: string) => Promise<void>;
   onUpdateUser?: (user: User) => void;
-  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
+  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date; unread?: number }>;
   currentDirectChat?: string | null;
   onLoadDirectConversations?: () => void;
   onStartDirectChat?: (userId: string) => void;

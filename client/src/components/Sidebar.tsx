@@ -13,7 +13,7 @@ interface SidebarProps {
   onCreateRoom: () => void;
   onOpenSettings: () => void;
   onOpenPanel: () => void;
-  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date }>;
+  directConversations?: Array<{ userId: string; username: string; lastMessage: string; timestamp: Date; unread?: number }>;
   onLoadDirectConversations?: () => void;
   onStartDirectChat?: (userId: string) => void;
   onStartDMByUsername?: (username: string) => Promise<void>;
@@ -153,8 +153,15 @@ export function Sidebar({
                   <Avatar className="h-7 w-7 mr-2 flex-shrink-0">
                     <AvatarFallback className="text-xs">{conv.username[0]?.toUpperCase()}</AvatarFallback>
                   </Avatar>
-                  <div className="text-left min-w-0">
-                    <div className="text-sm font-medium">{conv.username}</div>
+                  <div className="text-left min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium truncate">{conv.username}</div>
+                      {(conv.unread || 0) > 0 && (
+                        <span className="ml-1 flex-shrink-0 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                          NEW
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate max-w-36">{conv.lastMessage}</div>
                   </div>
                 </Button>
