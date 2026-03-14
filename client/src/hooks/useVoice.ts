@@ -3,13 +3,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
 ];
 
 interface PeerEntry {
-  socketId: string;
+  pc: RTCPeerConnection;
   email: string;
   username: string;
-  pc: RTCPeerConnection;
 }
 
 export interface VoiceState {
@@ -19,7 +19,7 @@ export interface VoiceState {
   channelMembers: Record<string, Array<{ email: string; username: string }>>;
 }
 
-export function useVoice(socketManager: any, userEmail: string) {
+export function useVoice(socketManager: any, _userEmail: string) {
   const [state, setState] = useState<VoiceState>({
     currentChannel: null,
     muted: false,
@@ -27,157 +27,231 @@ export function useVoice(socketManager: any, userEmail: string) {
     channelMembers: { General: [], Gaming: [], Music: [] },
   });
 
-  // Use refs so callbacks always have latest values without stale closures
+  // All mutable state lives in refs so event handlers are never stale
   const peersRef = useRef<Map<string, PeerEntry>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
-  const speakerDeviceRef = useRef<string>('');
-  // Hidden audio container mounted once
-  const audioContainerRef = useRef<HTMLDivElement | null>(null);
+  const speakerRef = useRef<string>('');
+  const currentChannelRef = useRef<string | null>(null);
 
-  // Ensure hidden audio container exists in DOM
-  const getAudioContainer = useCallback(() => {
+  // Hidden audio container kept in the DOM for the lifetime of the hook
+  const audioContainerRef = useRef<HTMLDivElement | null>(null);
+  const ensureContainer = () => {
     if (!audioContainerRef.current) {
       const div = document.createElement('div');
-      div.style.display = 'none';
-      div.id = 'voice-audio-container';
+      div.style.cssText = 'position:fixed;width:0;height:0;overflow:hidden;';
       document.body.appendChild(div);
       audioContainerRef.current = div;
     }
     return audioContainerRef.current;
-  }, []);
+  };
 
-  const getSocket = useCallback(() => socketManager?.getSocket?.() ?? null, [socketManager]);
+  const sock = () => socketManager?.getSocket?.() ?? null;
 
-  const attachRemoteStream = useCallback((socketId: string, stream: MediaStream) => {
-    const container = getAudioContainer();
-    // Remove existing audio for this peer
-    const old = container.querySelector(`[data-peer="${socketId}"]`);
-    if (old) old.remove();
+  // ── Peer helpers ─────────────────────────────────────────────
 
-    const audio = document.createElement('audio');
-    audio.autoplay = true;
-    audio.dataset.peer = socketId;
-    audio.srcObject = stream;
-    if (speakerDeviceRef.current && 'setSinkId' in audio) {
-      (audio as any).setSinkId(speakerDeviceRef.current).catch(() => {});
+  const closePeer = (socketId: string) => {
+    const entry = peersRef.current.get(socketId);
+    if (entry) {
+      entry.pc.ontrack = null;
+      entry.pc.onicecandidate = null;
+      entry.pc.onconnectionstatechange = null;
+      entry.pc.close();
+      peersRef.current.delete(socketId);
     }
-    container.appendChild(audio);
-    audio.play().catch(() => {});
-  }, [getAudioContainer]);
-
-  const removePeerAudio = useCallback((socketId: string) => {
+    // Remove audio element
     const container = audioContainerRef.current;
-    if (!container) return;
-    const el = container.querySelector(`[data-peer="${socketId}"]`);
-    if (el) el.remove();
-  }, []);
+    container?.querySelector(`[data-peer="${socketId}"]`)?.remove();
+  };
 
-  const removePeer = useCallback((socketId: string) => {
-    const peer = peersRef.current.get(socketId);
-    if (peer) {
-      peer.pc.close();
-      peersRef.current.delete(socketId);
-    }
-    removePeerAudio(socketId);
-  }, [removePeerAudio]);
+  const closeAllPeers = () => {
+    peersRef.current.forEach((_, id) => closePeer(id));
+  };
 
-  const stopLocalStream = useCallback(() => {
-    localStreamRef.current?.getTracks().forEach(t => t.stop());
-    localStreamRef.current = null;
-  }, []);
-
-  const createPC = useCallback((socketId: string, email: string, username: string): RTCPeerConnection => {
-    // Close any existing connection for this peer
-    const existing = peersRef.current.get(socketId);
-    if (existing) {
-      existing.pc.close();
-      peersRef.current.delete(socketId);
-    }
+  const buildPC = (socketId: string, email: string, username: string): RTCPeerConnection => {
+    // Tear down any existing connection for this peer first
+    closePeer(socketId);
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-    // Add local audio tracks
-    localStreamRef.current?.getTracks().forEach(t => {
-      pc.addTrack(t, localStreamRef.current!);
-    });
+    // Add our local audio tracks so the remote side hears us
+    localStreamRef.current?.getTracks().forEach(t =>
+      pc.addTrack(t, localStreamRef.current!)
+    );
 
-    // Relay ICE candidates
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        getSocket()?.emit('voiceSignal', {
+    // Forward ICE candidates via signaling channel
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        sock()?.emit('voiceSignal', {
           targetSocketId: socketId,
-          signal: { type: 'ice', candidate: e.candidate.toJSON() },
+          signal: { type: 'ice', candidate: candidate.toJSON() },
         });
       }
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
-        pc.restartIce();
-      }
+      if (pc.connectionState === 'failed') pc.restartIce();
     };
 
-    pc.ontrack = (e) => {
-      if (e.streams && e.streams[0]) {
-        attachRemoteStream(socketId, e.streams[0]);
+    // Play remote audio
+    pc.ontrack = ({ streams }) => {
+      const stream = streams[0];
+      if (!stream) return;
+      const container = ensureContainer();
+      // Remove any old audio for this peer
+      container.querySelector(`[data-peer="${socketId}"]`)?.remove();
+      const audio = document.createElement('audio');
+      audio.dataset.peer = socketId;
+      audio.autoplay = true;
+      audio.srcObject = stream;
+      if (speakerRef.current && 'setSinkId' in audio) {
+        (audio as any).setSinkId(speakerRef.current).catch(() => {});
       }
+      container.appendChild(audio);
     };
 
-    peersRef.current.set(socketId, { socketId, email, username, pc });
+    peersRef.current.set(socketId, { pc, email, username });
     return pc;
-  }, [getSocket, attachRemoteStream]);
+  };
 
-  // ── Public actions ─────────────────────────────────────────
+  // ── Socket signaling handler (stable — only registered once) ─
 
-  const leaveChannel = useCallback(() => {
-    getSocket()?.emit('leaveVoiceChannel', () => {});
-    peersRef.current.forEach((_, id) => removePeer(id));
-    peersRef.current.clear();
-    stopLocalStream();
-    setState(s => ({ ...s, currentChannel: null, muted: false, connecting: false }));
-  }, [getSocket, removePeer, stopLocalStream]);
+  useEffect(() => {
+    const socket = sock();
+    if (!socket) return;
+
+    // ── voiceChannelsUpdated: refresh member list for everyone
+    const onChannels = (channels: Record<string, Array<{ email: string; username: string }>>) => {
+      setState(s => ({ ...s, channelMembers: channels }));
+    };
+
+    // ── voicePeerJoined: an existing member is told someone new joined.
+    //    We do NOT pre-create a PC here — we wait for the joiner's offer.
+    //    (No-op: just informational; the offer will arrive shortly.)
+    const onPeerJoined = (_data: any) => { /* handled when offer arrives */ };
+
+    // ── voicePeerLeft: remove that peer's connection
+    const onPeerLeft = ({ socketId }: { socketId: string }) => {
+      closePeer(socketId);
+    };
+
+    // ── voiceSignal: WebRTC signaling relay
+    const onSignal = async ({ fromSocketId, signal }: { fromSocketId: string; signal: any }) => {
+      const s = sock();
+      if (!s) return;
+
+      if (signal.type === 'offer') {
+        // We are an existing member receiving the new joiner's offer.
+        // Build (or rebuild) the peer connection for the joiner.
+        const pc = buildPC(fromSocketId, '', '');
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          s.emit('voiceSignal', {
+            targetSocketId: fromSocketId,
+            signal: { type: 'answer', sdp: pc.localDescription },
+          });
+        } catch (err) {
+          console.warn('[voice] offer handling error', err);
+        }
+
+      } else if (signal.type === 'answer') {
+        // We are the joiner receiving an existing peer's answer.
+        const entry = peersRef.current.get(fromSocketId);
+        if (entry && entry.pc.signalingState !== 'stable') {
+          try {
+            await entry.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          } catch (err) {
+            console.warn('[voice] answer handling error', err);
+          }
+        }
+
+      } else if (signal.type === 'ice') {
+        const entry = peersRef.current.get(fromSocketId);
+        if (entry && signal.candidate) {
+          try {
+            await entry.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch {}
+        }
+      }
+    };
+
+    socket.on('voiceChannelsUpdated', onChannels);
+    socket.on('voicePeerJoined', onPeerJoined);
+    socket.on('voicePeerLeft', onPeerLeft);
+    socket.on('voiceSignal', onSignal);
+
+    // Initial channel state
+    socket.emit('getVoiceChannels', (res: any) => {
+      if (res?.ok) setState(s => ({ ...s, channelMembers: res.channels }));
+    });
+
+    return () => {
+      socket.off('voiceChannelsUpdated', onChannels);
+      socket.off('voicePeerJoined', onPeerJoined);
+      socket.off('voicePeerLeft', onPeerLeft);
+      socket.off('voiceSignal', onSignal);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socketManager]); // only re-run if socketManager itself is replaced
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      sock()?.emit('leaveVoiceChannel', () => {});
+      closeAllPeers();
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+      audioContainerRef.current?.remove();
+      audioContainerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Public API ────────────────────────────────────────────────
 
   const joinChannel = useCallback(async (channelId: string, micDeviceId?: string) => {
-    const socket = getSocket();
+    const socket = sock();
     if (!socket) return;
 
     setState(s => ({ ...s, connecting: true }));
 
-    // Leave any current channel first
-    if (peersRef.current.size > 0) {
+    // Leave current channel first
+    if (currentChannelRef.current) {
       socket.emit('leaveVoiceChannel', () => {});
-      peersRef.current.forEach((_, id) => removePeer(id));
-      peersRef.current.clear();
-      stopLocalStream();
+      closeAllPeers();
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
     }
 
-    // Get microphone
+    // Request microphone
     let stream: MediaStream;
     try {
-      const constraints: MediaStreamConstraints = {
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
         video: false,
-      };
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      });
     } catch {
       setState(s => ({ ...s, connecting: false }));
       throw new Error('mic-denied');
     }
-
     localStreamRef.current = stream;
 
+    // Tell server we're joining
     socket.emit('joinVoiceChannel', { channelId }, async (res: any) => {
       if (!res?.ok) {
-        stopLocalStream();
+        stream.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
         setState(s => ({ ...s, connecting: false }));
         return;
       }
 
+      currentChannelRef.current = channelId;
       setState(s => ({ ...s, currentChannel: channelId, connecting: false }));
 
-      // As the new joiner, create offers to every existing peer
-      for (const peer of (res.existingPeers || [])) {
-        const pc = createPC(peer.socketId, peer.email, peer.username);
+      // As the NEW JOINER we initiate offers to every EXISTING peer
+      for (const peer of (res.existingPeers ?? [])) {
+        const pc = buildPC(peer.socketId, peer.email, peer.username);
         try {
           const offer = await pc.createOffer({ offerToReceiveAudio: true });
           await pc.setLocalDescription(offer);
@@ -185,18 +259,29 @@ export function useVoice(socketManager: any, userEmail: string) {
             targetSocketId: peer.socketId,
             signal: { type: 'offer', sdp: pc.localDescription },
           });
-        } catch {}
+        } catch (err) {
+          console.warn('[voice] createOffer error', err);
+        }
       }
     });
-  }, [getSocket, createPC, removePeer, stopLocalStream]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socketManager]);
+
+  const leaveChannel = useCallback(() => {
+    sock()?.emit('leaveVoiceChannel', () => {});
+    closeAllPeers();
+    localStreamRef.current?.getTracks().forEach(t => t.stop());
+    localStreamRef.current = null;
+    currentChannelRef.current = null;
+    setState(s => ({ ...s, currentChannel: null, muted: false, connecting: false }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socketManager]);
 
   const toggleMute = useCallback(() => {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    const tracks = stream.getAudioTracks();
-    const nowMuted = tracks[0]?.enabled ?? false; // will flip
-    tracks.forEach(t => { t.enabled = !t.enabled; });
-    setState(s => ({ ...s, muted: !s.muted }));
+    const tracks = localStreamRef.current?.getAudioTracks() ?? [];
+    const nowEnabled = tracks[0]?.enabled ?? true;
+    tracks.forEach(t => { t.enabled = !nowEnabled; });
+    setState(s => ({ ...s, muted: nowEnabled }));
   }, []);
 
   const setMicDevice = useCallback(async (deviceId: string) => {
@@ -207,8 +292,8 @@ export function useVoice(socketManager: any, userEmail: string) {
         video: false,
       });
       const [newTrack] = newStream.getAudioTracks();
-      peersRef.current.forEach(peer => {
-        const sender = peer.pc.getSenders().find(s => s.track?.kind === 'audio');
+      peersRef.current.forEach(({ pc }) => {
+        const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
         if (sender && newTrack) sender.replaceTrack(newTrack).catch(() => {});
       });
       localStreamRef.current.getAudioTracks().forEach(t => t.stop());
@@ -217,101 +302,11 @@ export function useVoice(socketManager: any, userEmail: string) {
   }, []);
 
   const applySpeaker = useCallback((deviceId: string) => {
-    speakerDeviceRef.current = deviceId;
-    const container = audioContainerRef.current;
-    if (!container) return;
-    container.querySelectorAll('audio').forEach(el => {
+    speakerRef.current = deviceId;
+    audioContainerRef.current?.querySelectorAll('audio').forEach(el => {
       if ('setSinkId' in el) (el as any).setSinkId(deviceId).catch(() => {});
     });
   }, []);
-
-  // ── Socket event listeners ─────────────────────────────────
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    const onChannelsUpdated = (channels: Record<string, Array<{ email: string; username: string }>>) => {
-      setState(s => ({ ...s, channelMembers: channels }));
-    };
-
-    const onPeerJoined = ({ socketId, email, username }: any) => {
-      // Existing member: create a PC ready to receive the offer from the new joiner
-      if (!peersRef.current.has(socketId) && localStreamRef.current) {
-        createPC(socketId, email, username);
-      }
-    };
-
-    const onPeerLeft = ({ socketId }: any) => {
-      removePeer(socketId);
-    };
-
-    const onSignal = async ({ fromSocketId, signal }: any) => {
-      const socket = getSocket();
-      if (!socket) return;
-
-      if (signal.type === 'offer') {
-        // Create or reuse a PC for this peer
-        const pc = createPC(fromSocketId, '', '');
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit('voiceSignal', {
-            targetSocketId: fromSocketId,
-            signal: { type: 'answer', sdp: pc.localDescription },
-          });
-        } catch {}
-      } else if (signal.type === 'answer') {
-        const peer = peersRef.current.get(fromSocketId);
-        if (peer && peer.pc.signalingState !== 'stable') {
-          try {
-            await peer.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-          } catch {}
-        }
-      } else if (signal.type === 'ice') {
-        const peer = peersRef.current.get(fromSocketId);
-        if (peer && signal.candidate) {
-          try {
-            await peer.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-          } catch {}
-        }
-      }
-    };
-
-    socket.on('voiceChannelsUpdated', onChannelsUpdated);
-    socket.on('voicePeerJoined', onPeerJoined);
-    socket.on('voicePeerLeft', onPeerLeft);
-    socket.on('voiceSignal', onSignal);
-
-    // Load initial channel state
-    socket.emit('getVoiceChannels', (res: any) => {
-      if (res?.ok && res.channels) {
-        setState(s => ({ ...s, channelMembers: res.channels }));
-      }
-    });
-
-    return () => {
-      socket.off('voiceChannelsUpdated', onChannelsUpdated);
-      socket.off('voicePeerJoined', onPeerJoined);
-      socket.off('voicePeerLeft', onPeerLeft);
-      socket.off('voiceSignal', onSignal);
-    };
-  }, [socketManager, getSocket, createPC, removePeer]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      getSocket()?.emit('leaveVoiceChannel', () => {});
-      peersRef.current.forEach((_, id) => {
-        peersRef.current.get(id)?.pc.close();
-        removePeerAudio(id);
-      });
-      peersRef.current.clear();
-      stopLocalStream();
-      audioContainerRef.current?.remove();
-      audioContainerRef.current = null;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { ...state, joinChannel, leaveChannel, toggleMute, setMicDevice, applySpeaker };
 }
