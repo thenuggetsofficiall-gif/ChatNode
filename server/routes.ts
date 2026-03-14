@@ -77,6 +77,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Track connected sockets by email for real-time DM delivery
   const connectedByEmail: Record<string, Set<string>> = {};
 
+  // Voice channels — in-memory (reset on server restart, users reconnect)
+  const VOICE_CHANNELS = ['General', 'Gaming', 'Music'] as const;
+  const MAX_VOICE = 50;
+  // { channelId: [ { email, username, socketId } ] }
+  const voiceChannels: Record<string, Array<{ email: string; username: string; socketId: string }>> = {};
+  for (const ch of VOICE_CHANNELS) voiceChannels[ch] = [];
+
   const saveAll = () => {
     saveJSON('users.json', usersByEmail);
     saveJSON('rooms.json', rooms);
@@ -555,6 +562,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cb && cb({ ok: true, users: allUsers });
     });
 
+    // ── Voice Channels ───────────────────────────────────────────
+    socket.on('getVoiceChannels', (cb) => {
+      const state: Record<string, Array<{ email: string; username: string }>> = {};
+      for (const ch of VOICE_CHANNELS) {
+        state[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+      }
+      cb && cb({ ok: true, channels: state });
+    });
+
+    socket.on('joinVoiceChannel', (data: { channelId: string }, cb) => {
+      const user = (socket as any).data.user;
+      if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+
+      const channelId = data?.channelId;
+      if (!VOICE_CHANNELS.includes(channelId as any)) return cb && cb({ ok: false, err: 'bad-channel' });
+
+      const channel = voiceChannels[channelId];
+      if (channel.length >= MAX_VOICE) return cb && cb({ ok: false, err: 'full' });
+
+      // Remove from any other channel first
+      for (const ch of VOICE_CHANNELS) {
+        voiceChannels[ch] = voiceChannels[ch].filter(m => m.email !== user.email);
+      }
+
+      // Build list of existing members (to tell the joiner who to call)
+      const existing = channel.map(m => ({ socketId: m.socketId, email: m.email, username: m.username }));
+
+      // Add new member
+      channel.push({ email: user.email, username: user.username, socketId: socket.id });
+
+      // Tell existing members that a new user joined (so they can answer incoming offers)
+      for (const member of existing) {
+        io.to(member.socketId).emit('voicePeerJoined', { socketId: socket.id, email: user.email, username: user.username });
+      }
+
+      // Broadcast updated channel state to everyone
+      const publicState: Record<string, Array<{ email: string; username: string }>> = {};
+      for (const ch of VOICE_CHANNELS) {
+        publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+      }
+      io.emit('voiceChannelsUpdated', publicState);
+
+      cb && cb({ ok: true, channelId, existingPeers: existing });
+    });
+
+    socket.on('leaveVoiceChannel', (cb) => {
+      const user = (socket as any).data.user;
+      let leftChannel = '';
+      for (const ch of VOICE_CHANNELS) {
+        const idx = voiceChannels[ch].findIndex(m => m.email === user?.email);
+        if (idx !== -1) {
+          voiceChannels[ch].splice(idx, 1);
+          leftChannel = ch;
+          // Notify remaining members
+          for (const member of voiceChannels[ch]) {
+            io.to(member.socketId).emit('voicePeerLeft', { socketId: socket.id, email: user?.email });
+          }
+          break;
+        }
+      }
+      if (leftChannel) {
+        const publicState: Record<string, Array<{ email: string; username: string }>> = {};
+        for (const ch of VOICE_CHANNELS) {
+          publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+        }
+        io.emit('voiceChannelsUpdated', publicState);
+      }
+      cb && cb({ ok: true });
+    });
+
+    // Relay WebRTC signaling between peers
+    socket.on('voiceSignal', (data: { targetSocketId: string; signal: any }) => {
+      if (!data?.targetSocketId || !data?.signal) return;
+      io.to(data.targetSocketId).emit('voiceSignal', { fromSocketId: socket.id, signal: data.signal });
+    });
+
     // Broadcast system - owner only
     socket.on('createBroadcast', (data, cb) => {
       const user = (socket as any).data.user;
@@ -827,6 +910,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (sockets) {
           sockets.delete(socket.id);
           if (sockets.size === 0) delete connectedByEmail[user.email];
+        }
+        // Clean up voice channels
+        let changedVoice = false;
+        for (const ch of VOICE_CHANNELS) {
+          const before = voiceChannels[ch].length;
+          voiceChannels[ch] = voiceChannels[ch].filter(m => m.socketId !== socket.id);
+          if (voiceChannels[ch].length !== before) {
+            changedVoice = true;
+            // Notify remaining members
+            for (const member of voiceChannels[ch]) {
+              io.to(member.socketId).emit('voicePeerLeft', { socketId: socket.id, email: user.email });
+            }
+          }
+        }
+        if (changedVoice) {
+          const publicState: Record<string, Array<{ email: string; username: string }>> = {};
+          for (const ch of VOICE_CHANNELS) {
+            publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+          }
+          io.emit('voiceChannelsUpdated', publicState);
         }
       }
     });

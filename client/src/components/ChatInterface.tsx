@@ -13,6 +13,7 @@ import { PasswordModal } from './PasswordModal';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { AdminPanel } from './AdminPanel';
 import { useToast } from '@/hooks/use-toast';
+import { useVoice } from '@/hooks/useVoice';
 import type { User, Message, MessageLog, Ban, Warning } from '@/types/chat';
 
 const COMMON_EMOJIS = ['😀','😂','😍','🥰','😎','😭','😅','🤔','👍','👏','🎉','❤️','🔥','✨','💀','🙏','🤣','😊','😢','😤','😳','🤯','💯','🚀','👀','😏','🥺','😬','🤝','💪'];
@@ -70,6 +71,28 @@ export function ChatInterface({
   const [banned, setBanned] = useState<Ban | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Voice
+  const [micDeviceId, setMicDeviceId] = useState('');
+  const [speakerDeviceId, setSpeakerDeviceId] = useState('');
+  const rawSocket = socketManager?.getSocket?.() ?? null;
+  const voice = useVoice(rawSocket, user.email);
+
+  const handleJoinVoice = (channelId: string) => {
+    voice.joinChannel(channelId, micDeviceId || undefined).catch(() => {
+      toast({ title: 'Mic Access Denied', description: 'Please allow microphone access to use voice chat.', variant: 'destructive' });
+    });
+  };
+
+  const handleMicChange = (deviceId: string) => {
+    setMicDeviceId(deviceId);
+    voice.setMicDevice(deviceId);
+  };
+
+  const handleSpeakerChange = (deviceId: string) => {
+    setSpeakerDeviceId(deviceId);
+    voice.applySpeaker(deviceId);
+  };
 
   useState(() => {
     if (socketManager) {
@@ -240,6 +263,13 @@ export function ChatInterface({
           onStartDirectChat={onStartDirectChat}
           onStartDMByUsername={onStartDMByUsername}
           currentDirectChat={currentDirectChat}
+          voiceChannelMembers={voice.channelMembers}
+          currentVoiceChannel={voice.currentChannel}
+          voiceMuted={voice.muted}
+          voiceConnecting={voice.connecting}
+          onJoinVoice={handleJoinVoice}
+          onLeaveVoice={voice.leaveChannel}
+          onToggleMute={voice.toggleMute}
         />
 
         {/* Main Chat Area */}
@@ -405,6 +435,10 @@ export function ChatInterface({
         onClose={() => setShowSettings(false)}
         currentUser={user}
         onUpdateProfile={handleUpdateProfile}
+        micDeviceId={micDeviceId}
+        speakerDeviceId={speakerDeviceId}
+        onMicChange={handleMicChange}
+        onSpeakerChange={handleSpeakerChange}
       />
 
       <BroadcastModal

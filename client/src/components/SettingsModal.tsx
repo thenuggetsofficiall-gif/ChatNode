@@ -1,128 +1,113 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { X, Upload } from "lucide-react";
+import { X, Upload, Mic, Volume2 } from "lucide-react";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: any;
   onUpdateProfile: (updates: { username?: string; profileImageUrl?: string }) => Promise<void>;
+  micDeviceId?: string;
+  speakerDeviceId?: string;
+  onMicChange?: (deviceId: string) => void;
+  onSpeakerChange?: (deviceId: string) => void;
 }
 
-export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }: SettingsModalProps) {
+export function SettingsModal({
+  isOpen,
+  onClose,
+  currentUser,
+  onUpdateProfile,
+  micDeviceId = '',
+  speakerDeviceId = '',
+  onMicChange,
+  onSpeakerChange,
+}: SettingsModalProps) {
   const [username, setUsername] = useState(currentUser?.username || "");
   const [profileImageUrl, setProfileImageUrl] = useState(currentUser?.profileImageUrl || "");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
+  const [speakerDevices, setSpeakerDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMic, setSelectedMic] = useState(micDeviceId);
+  const [selectedSpeaker, setSelectedSpeaker] = useState(speakerDeviceId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setUsername(currentUser?.username || "");
+    setProfileImageUrl(currentUser?.profileImageUrl || "");
+    setSelectedMic(micDeviceId);
+    setSelectedSpeaker(speakerDeviceId);
+
+    // Enumerate devices
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      setMicDevices(devices.filter(d => d.kind === 'audioinput'));
+      setSpeakerDevices(devices.filter(d => d.kind === 'audiooutput'));
+    }).catch(() => {});
+  }, [isOpen, currentUser, micDeviceId, speakerDeviceId]);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check if it's a PNG file
     if (!file.type.includes('png')) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please select a PNG image file",
-        variant: "destructive"
-      });
+      toast({ title: "Invalid File Type", description: "Please select a PNG image file", variant: "destructive" });
       return;
     }
 
     setIsUploading(true);
     try {
-      // Get upload URL
       const response = await fetch('/api/objects/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to get upload URL');
-      }
-
+      if (!response.ok) throw new Error('Failed to get upload URL');
       const { uploadURL } = await response.json();
-
-      // Upload file
       const uploadResponse = await fetch(uploadURL, {
         method: 'PUT',
         body: file,
-        headers: {
-          'Content-Type': file.type
-        }
+        headers: { 'Content-Type': file.type }
       });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
-      }
-
-      // Convert upload URL to object storage path
-      const objectPath = uploadURL.split('/').pop(); // Get the object ID
+      if (!uploadResponse.ok) throw new Error('Failed to upload file');
+      const objectPath = uploadURL.split('/').pop();
       const profileImagePath = `/objects/uploads/${objectPath}`;
       setProfileImageUrl(profileImagePath);
-      
-      toast({
-        title: "Image Uploaded",
-        description: "Profile picture uploaded successfully"
-      });
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast({
-        title: "Upload Failed",
-        description: "Failed to upload image. Please try again.",
-        variant: "destructive"
-      });
+      toast({ title: "Image Uploaded", description: "Profile picture uploaded successfully" });
+    } catch {
+      toast({ title: "Upload Failed", description: "Failed to upload image. Please try again.", variant: "destructive" });
     } finally {
       setIsUploading(false);
-      // Clear the input so the same file can be selected again
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleSave = async () => {
     if (!username.trim()) {
-      toast({
-        title: "Error",
-        description: "Username cannot be empty",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Username cannot be empty", variant: "destructive" });
       return;
     }
-
     setIsUpdating(true);
     try {
       const updates: { username?: string; profileImageUrl?: string } = {};
-      
-      if (username !== currentUser?.username) {
-        updates.username = username.trim();
-      }
-      
-      if (profileImageUrl !== currentUser?.profileImageUrl) {
-        updates.profileImageUrl = profileImageUrl;
-      }
-
+      if (username !== currentUser?.username) updates.username = username.trim();
+      if (profileImageUrl !== currentUser?.profileImageUrl) updates.profileImageUrl = profileImageUrl;
       await onUpdateProfile(updates);
-      
-      toast({
-        title: "Profile Updated",
-        description: "Your profile has been updated successfully"
-      });
-      
+
+      // Apply device changes
+      if (selectedMic !== micDeviceId) onMicChange?.(selectedMic);
+      if (selectedSpeaker !== speakerDeviceId) onSpeakerChange?.(selectedSpeaker);
+
+      toast({ title: "Settings Saved", description: "Your settings have been saved successfully" });
       onClose();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update profile",
-        variant: "destructive"
-      });
+    } catch {
+      toast({ title: "Error", description: "Failed to save settings", variant: "destructive" });
     } finally {
       setIsUpdating(false);
     }
@@ -133,46 +118,22 @@ export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }:
       <DialogContent className="sm:max-w-md">
         <div className="flex justify-between items-center">
           <DialogTitle>Settings</DialogTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-6 w-6 p-0 text-red-500 hover:text-red-600"
-            data-testid="button-close-settings"
-          >
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0 text-red-500 hover:text-red-600" data-testid="button-close-settings">
             <X className="h-4 w-4" />
           </Button>
         </div>
-        
+
         <div className="space-y-6 pt-4">
           {/* Profile Picture */}
           <div className="space-y-2">
             <Label>Profile Picture</Label>
             <div className="flex items-center space-x-4">
               {profileImageUrl && (
-                <img 
-                  src={profileImageUrl} 
-                  alt="Profile" 
-                  className="w-16 h-16 rounded-full object-cover border-2 border-border"
-                />
+                <img src={profileImageUrl} alt="Profile" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
               )}
               <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".png,image/png"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  data-testid="input-profile-image"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="flex items-center gap-2"
-                  data-testid="button-upload-image"
-                >
+                <input ref={fileInputRef} type="file" accept=".png,image/png" onChange={handleFileSelect} className="hidden" data-testid="input-profile-image" />
+                <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-2" data-testid="button-upload-image">
                   <Upload className="h-4 w-4" />
                   <span>{isUploading ? "Uploading..." : "Upload PNG"}</span>
                 </Button>
@@ -183,29 +144,63 @@ export function SettingsModal({ isOpen, onClose, currentUser, onUpdateProfile }:
           {/* Username */}
           <div className="space-y-2">
             <Label htmlFor="username">Username</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter your username"
-              data-testid="input-username"
-            />
+            <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter your username" data-testid="input-username" />
           </div>
 
-          {/* Save Button */}
+          {/* Microphone */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Mic className="h-4 w-4 text-muted-foreground" />
+              Microphone
+            </Label>
+            {micDevices.length > 0 ? (
+              <Select value={selectedMic} onValueChange={setSelectedMic}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Default microphone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Default</SelectItem>
+                  {micDevices.map(d => (
+                    <SelectItem key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Microphone ${d.deviceId.slice(0, 6)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-muted-foreground">No microphones detected. Grant mic permission and reopen settings.</p>
+            )}
+          </div>
+
+          {/* Speaker */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Volume2 className="h-4 w-4 text-muted-foreground" />
+              Speaker / Headphones
+            </Label>
+            {speakerDevices.length > 0 ? (
+              <Select value={selectedSpeaker} onValueChange={setSelectedSpeaker}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Default speaker" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Default</SelectItem>
+                  {speakerDevices.map(d => (
+                    <SelectItem key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Speaker ${d.deviceId.slice(0, 6)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-muted-foreground">No speakers detected or browser doesn't support output selection.</p>
+            )}
+          </div>
+
+          {/* Buttons */}
           <div className="flex justify-end space-x-2">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              data-testid="button-cancel-settings"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={isUpdating}
-              data-testid="button-save-settings"
-            >
+            <Button variant="outline" onClick={onClose} data-testid="button-cancel-settings">Cancel</Button>
+            <Button onClick={handleSave} disabled={isUpdating} data-testid="button-save-settings">
               {isUpdating ? "Saving..." : "Save Changes"}
             </Button>
           </div>
