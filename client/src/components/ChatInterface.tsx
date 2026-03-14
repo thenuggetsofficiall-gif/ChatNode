@@ -75,8 +75,7 @@ export function ChatInterface({
   // Voice
   const [micDeviceId, setMicDeviceId] = useState('');
   const [speakerDeviceId, setSpeakerDeviceId] = useState('');
-  const rawSocket = socketManager?.getSocket?.() ?? null;
-  const voice = useVoice(rawSocket, user.email);
+  const voice = useVoice(socketManager, user.email);
 
   const handleJoinVoice = (channelId: string) => {
     voice.joinChannel(channelId, micDeviceId || undefined).catch(() => {

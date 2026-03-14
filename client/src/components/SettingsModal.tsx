@@ -154,13 +154,16 @@ export function SettingsModal({
               Microphone
             </Label>
             {micDevices.length > 0 ? (
-              <Select value={selectedMic} onValueChange={setSelectedMic}>
+              <Select
+                value={selectedMic || '__default__'}
+                onValueChange={v => setSelectedMic(v === '__default__' ? '' : v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Default microphone" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Default</SelectItem>
-                  {micDevices.map(d => (
+                  <SelectItem value="__default__">Default</SelectItem>
+                  {micDevices.filter(d => d.deviceId && d.deviceId !== 'default').map(d => (
                     <SelectItem key={d.deviceId} value={d.deviceId}>
                       {d.label || `Microphone ${d.deviceId.slice(0, 6)}`}
                     </SelectItem>
@@ -179,13 +182,16 @@ export function SettingsModal({
               Speaker / Headphones
             </Label>
             {speakerDevices.length > 0 ? (
-              <Select value={selectedSpeaker} onValueChange={setSelectedSpeaker}>
+              <Select
+                value={selectedSpeaker || '__default__'}
+                onValueChange={v => setSelectedSpeaker(v === '__default__' ? '' : v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Default speaker" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Default</SelectItem>
-                  {speakerDevices.map(d => (
+                  <SelectItem value="__default__">Default</SelectItem>
+                  {speakerDevices.filter(d => d.deviceId && d.deviceId !== 'default').map(d => (
                     <SelectItem key={d.deviceId} value={d.deviceId}>
                       {d.label || `Speaker ${d.deviceId.slice(0, 6)}`}
                     </SelectItem>
