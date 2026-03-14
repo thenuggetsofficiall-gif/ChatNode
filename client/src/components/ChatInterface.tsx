@@ -261,7 +261,25 @@ export function ChatInterface({
 
           {/* Messages - fills remaining space and scrolls */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <MessageList messages={messages} currentUserEmail={user.email} onReply={setReplyTo} />
+            <MessageList
+              messages={messages}
+              currentUserEmail={user.email}
+              onReply={setReplyTo}
+              isDirect={!!currentDirectChat}
+              onReport={!currentDirectChat ? async (message) => {
+                try {
+                  await socketManager.reportMessage({
+                    reportedEmail: message.email,
+                    reportedUsername: message.display,
+                    messageText: message.text,
+                    room: currentRoom,
+                  });
+                  toast({ title: 'Message Reported', description: 'Admins have been notified.' });
+                } catch {
+                  toast({ title: 'Error', description: 'Failed to report message.', variant: 'destructive' });
+                }
+              } : undefined}
+            />
           </div>
 
           {/* Reply preview */}

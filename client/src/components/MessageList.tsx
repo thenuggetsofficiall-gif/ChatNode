@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Crown, Shield, Reply, X } from 'lucide-react';
+import { Crown, Shield, Reply, Flag } from 'lucide-react';
 import type { Message } from '@/types/chat';
 
 interface MessageListProps {
   messages: Message[];
   currentUserEmail?: string;
   onReply?: (message: Message) => void;
+  onReport?: (message: Message) => void;
+  isDirect?: boolean;
 }
 
-export function MessageList({ messages, currentUserEmail, onReply }: MessageListProps) {
+export function MessageList({ messages, currentUserEmail, onReply, onReport, isDirect }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
@@ -100,15 +101,28 @@ export function MessageList({ messages, currentUserEmail, onReply }: MessageList
             </div>
           </div>
 
-          {/* Reply button - shows on hover */}
-          {hoveredIndex === index && onReply && (
-            <button
-              className="absolute right-2 top-1.5 p-1.5 rounded bg-background border border-border shadow-sm hover:bg-muted transition-colors"
-              onClick={() => onReply(message)}
-              title="Reply"
-            >
-              <Reply className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
+          {/* Action buttons - show on hover */}
+          {hoveredIndex === index && (
+            <div className="absolute right-2 top-1.5 flex items-center space-x-1">
+              {onReply && (
+                <button
+                  className="p-1.5 rounded bg-background border border-border shadow-sm hover:bg-muted transition-colors"
+                  onClick={() => onReply(message)}
+                  title="Reply"
+                >
+                  <Reply className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              )}
+              {onReport && !isDirect && message.email !== currentUserEmail && (
+                <button
+                  className="p-1.5 rounded bg-background border border-border shadow-sm hover:bg-red-500/10 hover:border-red-500/30 transition-colors"
+                  onClick={() => onReport(message)}
+                  title="Report message"
+                >
+                  <Flag className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       ))}
