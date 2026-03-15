@@ -80,9 +80,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Voice channels — in-memory (reset on server restart, users reconnect)
   const VOICE_CHANNELS = ['General', 'Gaming', 'Music'] as const;
   const MAX_VOICE = 50;
-  // { channelId: [ { email, username, socketId } ] }
-  const voiceChannels: Record<string, Array<{ email: string; username: string; socketId: string }>> = {};
+  interface VoiceMember { email: string; username: string; socketId: string; serverMuted: boolean; speaking: boolean; }
+  const voiceChannels: Record<string, VoiceMember[]> = {};
   for (const ch of VOICE_CHANNELS) voiceChannels[ch] = [];
+
+  const broadcastVoiceState = () => {
+    const pub: Record<string, Array<{ email: string; username: string; serverMuted: boolean; speaking: boolean }>> = {};
+    for (const ch of VOICE_CHANNELS) {
+      pub[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username, serverMuted: m.serverMuted, speaking: m.speaking }));
+    }
+    io.emit('voiceChannelsUpdated', pub);
+  };
 
   const saveAll = () => {
     saveJSON('users.json', usersByEmail);
@@ -563,71 +571,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     // ── Voice Channels ───────────────────────────────────────────
-    socket.on('getVoiceChannels', (cb) => {
-      const state: Record<string, Array<{ email: string; username: string }>> = {};
+    const removeFromVoice = (emailToRemove: string, removedSocketId: string) => {
       for (const ch of VOICE_CHANNELS) {
-        state[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+        const idx = voiceChannels[ch].findIndex(m => m.email === emailToRemove);
+        if (idx !== -1) {
+          voiceChannels[ch].splice(idx, 1);
+          for (const member of voiceChannels[ch]) {
+            io.to(member.socketId).emit('voicePeerLeft', { socketId: removedSocketId, email: emailToRemove });
+          }
+          break;
+        }
       }
-      cb && cb({ ok: true, channels: state });
+    };
+
+    socket.on('getVoiceChannels', (cb) => {
+      const pub: Record<string, any[]> = {};
+      for (const ch of VOICE_CHANNELS) {
+        pub[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username, serverMuted: m.serverMuted, speaking: m.speaking }));
+      }
+      cb && cb({ ok: true, channels: pub });
     });
 
     socket.on('joinVoiceChannel', (data: { channelId: string }, cb) => {
       const user = (socket as any).data.user;
       if (!user) return cb && cb({ ok: false, err: 'not-authed' });
-
       const channelId = data?.channelId;
       if (!VOICE_CHANNELS.includes(channelId as any)) return cb && cb({ ok: false, err: 'bad-channel' });
-
       const channel = voiceChannels[channelId];
       if (channel.length >= MAX_VOICE) return cb && cb({ ok: false, err: 'full' });
 
       // Remove from any other channel first
-      for (const ch of VOICE_CHANNELS) {
-        voiceChannels[ch] = voiceChannels[ch].filter(m => m.email !== user.email);
-      }
+      removeFromVoice(user.email, socket.id);
 
-      // Build list of existing members (to tell the joiner who to call)
       const existing = channel.map(m => ({ socketId: m.socketId, email: m.email, username: m.username }));
+      channel.push({ email: user.email, username: user.username, socketId: socket.id, serverMuted: false, speaking: false });
 
-      // Add new member
-      channel.push({ email: user.email, username: user.username, socketId: socket.id });
-
-      // Tell existing members that a new user joined (so they can answer incoming offers)
       for (const member of existing) {
         io.to(member.socketId).emit('voicePeerJoined', { socketId: socket.id, email: user.email, username: user.username });
       }
-
-      // Broadcast updated channel state to everyone
-      const publicState: Record<string, Array<{ email: string; username: string }>> = {};
-      for (const ch of VOICE_CHANNELS) {
-        publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
-      }
-      io.emit('voiceChannelsUpdated', publicState);
-
+      broadcastVoiceState();
       cb && cb({ ok: true, channelId, existingPeers: existing });
     });
 
     socket.on('leaveVoiceChannel', (cb) => {
       const user = (socket as any).data.user;
-      let leftChannel = '';
+      if (user?.email) removeFromVoice(user.email, socket.id);
+      broadcastVoiceState();
+      cb && cb({ ok: true });
+    });
+
+    // Client reports their speaking state
+    socket.on('voiceSpeaking', (data: { speaking: boolean }) => {
+      const user = (socket as any).data.user;
+      if (!user) return;
       for (const ch of VOICE_CHANNELS) {
-        const idx = voiceChannels[ch].findIndex(m => m.email === user?.email);
-        if (idx !== -1) {
-          voiceChannels[ch].splice(idx, 1);
-          leftChannel = ch;
-          // Notify remaining members
-          for (const member of voiceChannels[ch]) {
-            io.to(member.socketId).emit('voicePeerLeft', { socketId: socket.id, email: user?.email });
-          }
+        const member = voiceChannels[ch].find(m => m.email === user.email);
+        if (member) {
+          member.speaking = !!data.speaking;
+          broadcastVoiceState();
           break;
         }
       }
-      if (leftChannel) {
-        const publicState: Record<string, Array<{ email: string; username: string }>> = {};
-        for (const ch of VOICE_CHANNELS) {
-          publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
+    });
+
+    // Admin: disconnect a user from voice
+    socket.on('kickFromVoice', (data: { email: string }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') return cb && cb({ ok: false, err: 'cannot-kick-owner' });
+      if (targetRole === 'admin' && actor.role !== 'owner') return cb && cb({ ok: false, err: 'cannot-kick-admin' });
+
+      // Find target socket and emit kick event
+      for (const ch of VOICE_CHANNELS) {
+        const member = voiceChannels[ch].find(m => m.email === targetEmail);
+        if (member) {
+          io.to(member.socketId).emit('voiceKicked', { reason: 'Disconnected by moderator' });
+          removeFromVoice(targetEmail, member.socketId);
+          broadcastVoiceState();
+          break;
         }
-        io.emit('voiceChannelsUpdated', publicState);
+      }
+      cb && cb({ ok: true });
+    });
+
+    // Admin: server-mute a user in voice
+    socket.on('serverMuteVoice', (data: { email: string; muted: boolean }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') return cb && cb({ ok: false, err: 'cannot-mute-owner' });
+      if (targetRole === 'admin' && actor.role !== 'owner') return cb && cb({ ok: false, err: 'cannot-mute-admin' });
+
+      for (const ch of VOICE_CHANNELS) {
+        const member = voiceChannels[ch].find(m => m.email === targetEmail);
+        if (member) {
+          member.serverMuted = !!data.muted;
+          io.to(member.socketId).emit('voiceServerMuted', { muted: member.serverMuted });
+          broadcastVoiceState();
+          break;
+        }
       }
       cb && cb({ ok: true });
     });
@@ -912,24 +957,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (sockets.size === 0) delete connectedByEmail[user.email];
         }
         // Clean up voice channels
-        let changedVoice = false;
-        for (const ch of VOICE_CHANNELS) {
-          const before = voiceChannels[ch].length;
-          voiceChannels[ch] = voiceChannels[ch].filter(m => m.socketId !== socket.id);
-          if (voiceChannels[ch].length !== before) {
-            changedVoice = true;
-            // Notify remaining members
-            for (const member of voiceChannels[ch]) {
-              io.to(member.socketId).emit('voicePeerLeft', { socketId: socket.id, email: user.email });
-            }
-          }
-        }
-        if (changedVoice) {
-          const publicState: Record<string, Array<{ email: string; username: string }>> = {};
-          for (const ch of VOICE_CHANNELS) {
-            publicState[ch] = voiceChannels[ch].map(m => ({ email: m.email, username: m.username }));
-          }
-          io.emit('voiceChannelsUpdated', publicState);
+        const wasInVoice = VOICE_CHANNELS.some(ch => voiceChannels[ch].some(m => m.socketId === socket.id));
+        if (wasInVoice) {
+          removeFromVoice(user.email, socket.id);
+          broadcastVoiceState();
         }
       }
     });

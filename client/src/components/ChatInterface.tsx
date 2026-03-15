@@ -265,10 +265,26 @@ export function ChatInterface({
           voiceChannelMembers={voice.channelMembers}
           currentVoiceChannel={voice.currentChannel}
           voiceMuted={voice.muted}
+          voiceDeafened={voice.deafened}
+          voiceServerMuted={voice.serverMuted}
+          voiceSpeaking={voice.speaking}
           voiceConnecting={voice.connecting}
           onJoinVoice={handleJoinVoice}
           onLeaveVoice={voice.leaveChannel}
           onToggleMute={voice.toggleMute}
+          onToggleDeafen={voice.toggleDeafen}
+          onKickFromVoice={(email) => {
+            const socket = socketManager.getSocket();
+            socket?.emit('kickFromVoice', { email }, (res: any) => {
+              if (!res?.ok) toast({ title: 'Error', description: res?.err || 'Failed to kick', variant: 'destructive' });
+            });
+          }}
+          onServerMuteVoice={(email, muted) => {
+            const socket = socketManager.getSocket();
+            socket?.emit('serverMuteVoice', { email, muted }, (res: any) => {
+              if (!res?.ok) toast({ title: 'Error', description: res?.err || 'Failed to mute', variant: 'destructive' });
+            });
+          }}
         />
 
         {/* Main Chat Area */}
