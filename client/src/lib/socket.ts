@@ -191,6 +191,30 @@ class SocketManager {
     });
   }
 
+  getEmailBlacklist(): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getEmailBlacklist', (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  addEmailBlacklist(email: string): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('addEmailBlacklist', { email }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
+  removeEmailBlacklist(email: string): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('removeEmailBlacklist', { email }, (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
   // Event listeners
   onMessage(callback: (data: { room: string; msg: Message }) => void) {
     this.socket?.on('message', callback);

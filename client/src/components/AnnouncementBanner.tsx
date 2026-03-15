@@ -103,7 +103,14 @@ export function AnnouncementBanner({ socketManager }: AnnouncementBannerProps) {
               className="text-sm text-yellow-900 break-words pr-4"
               data-testid="text-broadcast-message"
             >
-              {broadcast.message}
+              {broadcast.message.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                /^https?:\/\//.test(part) ? (
+                  <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+                    className="underline font-medium text-yellow-700 hover:text-yellow-900 break-all">
+                    {part}
+                  </a>
+                ) : part
+              )}
             </p>
           </div>
         </div>

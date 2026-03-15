@@ -83,6 +83,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Voice bans — persisted
   let voiceBans: string[] = loadJSON('voice_bans.json', []);
   const isVoiceBanned = (email: string) => voiceBans.includes(email.toLowerCase());
+
+  // Email blacklist (owner only) — hides emails from admins
+  let emailBlacklist: string[] = loadJSON('email_blackout.json', []);
+  const isEmailBlacklisted = (email: string) => emailBlacklist.includes(email.toLowerCase());
+  const HIDDEN_EMAIL = '[hidden]';
   const isTimedOut = (email: string) => { const t = timeouts[email]; return t ? Date.now() < t.until : false; };
 
   // Voice channels — in-memory (reset on server restart, users reconnect)
@@ -115,6 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('dm_messages.json', dmMessages);
     saveJSON('unread_dms.json', unreadDMs);
     saveJSON('reports.json', reports);
+    saveJSON('email_blackout.json', emailBlacklist);
   };
 
   // Helper: get role of a user by email
@@ -515,22 +521,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     socket.on('getLogs', (cb) => {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
-      cb && cb({ ok: true, logs: messageLogs.slice().reverse().slice(0, 500) });
+      const isOwner = user.role === 'owner';
+      const logs = messageLogs.slice().reverse().slice(0, 500).map((log: any) => ({
+        ...log,
+        email: !isOwner && isEmailBlacklisted(log.email) ? HIDDEN_EMAIL : log.email,
+      }));
+      cb && cb({ ok: true, logs });
     });
 
     socket.on('getBans', (cb) => {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
-      cb && cb({ ok: true, bans });
+      const isOwner = user.role === 'owner';
+      if (isOwner) {
+        cb && cb({ ok: true, bans });
+      } else {
+        const maskedBans: Record<string, any> = {};
+        for (const [email, ban] of Object.entries(bans)) {
+          const displayEmail = isEmailBlacklisted(email) ? HIDDEN_EMAIL : email;
+          maskedBans[displayEmail] = ban;
+        }
+        cb && cb({ ok: true, bans: maskedBans });
+      }
     });
 
     // Get all registered users (admin+)
     socket.on('getUsers', (cb) => {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const isOwner = user.role === 'owner';
       const now = Date.now();
       const allUsers = Object.values(usersByEmail).map((u: any) => ({
-        email: u.email,
+        email: !isOwner && isEmailBlacklisted(u.email) ? HIDDEN_EMAIL : u.email,
         username: u.username,
         role: getUserRole(u.email),
         timedOut: isTimedOut(u.email),
@@ -633,6 +655,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
           s.emit('roleChanged', { role: newRole });
         }
       }
+      cb && cb({ ok: true });
+    });
+
+    // ── Email Blacklist (owner only) ────────────────────────────
+    socket.on('getEmailBlacklist', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      cb && cb({ ok: true, blacklist: emailBlacklist });
+    });
+
+    socket.on('addEmailBlacklist', (data: { email: string }, cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      const target = (data?.email || '').toLowerCase().trim();
+      if (!target) return cb && cb({ ok: false, err: 'bad-data' });
+      if (!emailBlacklist.includes(target)) emailBlacklist.push(target);
+      saveAll();
+      cb && cb({ ok: true });
+    });
+
+    socket.on('removeEmailBlacklist', (data: { email: string }, cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      const target = (data?.email || '').toLowerCase().trim();
+      emailBlacklist = emailBlacklist.filter(e => e !== target);
+      saveAll();
       cb && cb({ ok: true });
     });
 
