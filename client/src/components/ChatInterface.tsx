@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Hash, MessageCircle, Send, Smile, X, Reply } from 'lucide-react';
+import { Hash, MessageCircle, Send, Smile, X, Reply, Clock } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { MessageList } from './MessageList';
 import { AdminModals } from './AdminModals';
@@ -34,6 +34,7 @@ interface ChatInterfaceProps {
   onStartDirectChat?: (userId: string) => void;
   onStartDMByUsername?: (username: string) => Promise<void>;
   socketManager: any;
+  timedOut?: { until: number; by: string } | null;
 }
 
 export function ChatInterface({
@@ -51,7 +52,8 @@ export function ChatInterface({
   onLoadDirectConversations,
   onStartDirectChat,
   onStartDMByUsername,
-  socketManager
+  socketManager,
+  timedOut
 }: ChatInterfaceProps) {
   const [messageText, setMessageText] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -327,6 +329,17 @@ export function ChatInterface({
             />
           </div>
 
+          {/* Timeout banner */}
+          {timedOut && (
+            <div className="px-4 py-2 bg-orange-500/10 border-t border-orange-500/30 flex items-center gap-3 flex-shrink-0">
+              <Clock className="h-4 w-4 text-orange-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-orange-400">You are timed out</span>
+                <p className="text-xs text-orange-400/70">You cannot send messages until {new Date(timedOut.until).toLocaleString()}</p>
+              </div>
+            </div>
+          )}
+
           {/* Reply preview */}
           {replyTo && (
             <div className="px-4 py-2 bg-muted/50 border-t border-border flex items-center space-x-3 flex-shrink-0">
@@ -352,7 +365,7 @@ export function ChatInterface({
                   placeholder={replyTo ? `Reply to ${replyTo.display}...` : `Message ${currentDirectChat ? chatHeader : '#' + currentRoom}`}
                   className="pr-10"
                   maxLength={1000}
-                  disabled={!connected}
+                  disabled={!connected || !!timedOut}
                   data-testid="input-message"
                   style={{ fontFamily: 'system-ui, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif' }}
                 />
@@ -388,7 +401,7 @@ export function ChatInterface({
               <Button
                 type="submit"
                 size="sm"
-                disabled={!messageText.trim() || !connected}
+                disabled={!messageText.trim() || !connected || !!timedOut}
                 data-testid="button-send-message"
               >
                 <Send className="h-4 w-4" />

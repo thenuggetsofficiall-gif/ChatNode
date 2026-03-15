@@ -14,6 +14,7 @@ export default function Chat() {
     messages,
     directConversations,
     currentDirectChat,
+    timedOut,
     join,
     sendMessage,
     switchRoom,
@@ -41,8 +42,7 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (text: string, replyTo?: Message) => {
-    const response = await sendMessage(text, replyTo);
-    if (!response.ok) throw new Error((response as any).err || 'Failed to send message');
+    await sendMessage(text, replyTo);
   };
 
   const handleCreateRoom = async (name: string) => {
@@ -82,6 +82,7 @@ export default function Chat() {
       onStartDirectChat={startDirectChat}
       onStartDMByUsername={startDMByUsername}
       socketManager={socketManager}
+      timedOut={timedOut}
     />
   );
 }

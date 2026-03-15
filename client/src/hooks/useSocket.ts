@@ -9,10 +9,9 @@ export function useSocket() {
   const [currentRoom, setCurrentRoom] = useState('General');
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [directConversations, setDirectConversations] = useState<DirectConversation[]>([]);
-  // key = otherEmail, value = array of DM messages
   const [directMessages, setDirectMessages] = useState<Record<string, DirectMessage[]>>({});
   const [currentDirectChat, setCurrentDirectChat] = useState<string | null>(null);
-  // Ref to access current user email inside socket handlers without stale closures
+  const [timedOut, setTimedOut] = useState<{ until: number; by: string } | null>(null);
   const userEmailRef = useRef<string | null>(null);
 
   const loadDirectConversations = useCallback(async () => {
@@ -51,11 +50,26 @@ export function useSocket() {
       loadDirectConversations();
     };
 
+    const handleTimedOut = (data: { until: number; by: string }) => {
+      setTimedOut(data);
+    };
+
+    const handleTimeoutRemoved = () => {
+      setTimedOut(null);
+    };
+
+    const handleRoleChanged = (data: { role: string }) => {
+      setUser(prev => prev ? { ...prev, role: data.role as User['role'] } : prev);
+    };
+
     socketManager.onConnect(handleConnect);
     socketManager.onDisconnect(handleDisconnect);
     socketManager.onMessage(handleMessage);
     socketManager.onRooms(handleRooms);
     socketManager.onDirectMessage(handleDirectMessage);
+    socket.on('timedOut', handleTimedOut);
+    socket.on('timeoutRemoved', handleTimeoutRemoved);
+    socket.on('roleChanged', handleRoleChanged);
 
     return () => {
       socketManager.off('connect', handleConnect);
@@ -63,6 +77,9 @@ export function useSocket() {
       socketManager.off('message', handleMessage);
       socketManager.off('rooms', handleRooms);
       socketManager.off('directMessage', handleDirectMessage);
+      socket.off('timedOut', handleTimedOut);
+      socket.off('timeoutRemoved', handleTimeoutRemoved);
+      socket.off('roleChanged', handleRoleChanged);
     };
   }, [loadDirectConversations]);
 
@@ -80,7 +97,12 @@ export function useSocket() {
   const updateUser = (updatedUser: User) => setUser(updatedUser);
 
   const sendMessage = async (text: string, replyTo?: any) => {
-    return socketManager.sendMessage(currentRoom, text, replyTo);
+    const res = await socketManager.sendMessage(currentRoom, text, replyTo);
+    if (!res.ok) {
+      if ((res as any).err === 'timed-out') throw new Error(`You are timed out until ${new Date((res as any).until).toLocaleTimeString()}`);
+      throw new Error((res as any).err || 'Failed to send message');
+    }
+    return res;
   };
 
   const switchRoom = async (room: string) => {
@@ -186,6 +208,7 @@ export function useSocket() {
     messages: getUnifiedMessages(),
     directConversations,
     currentDirectChat,
+    timedOut,
     join,
     sendMessage: currentDirectChat
       ? (text: string, _replyTo?: any) => sendDirectMessage(text, currentDirectChat)

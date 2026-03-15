@@ -1,12 +1,36 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { X, List, Ban, Megaphone, Lock, ShieldPlus, ShieldMinus, Crown, Shield, Users, Flag, AlertTriangle } from 'lucide-react';
+import {
+  X, List, Ban, Megaphone, Lock, ShieldPlus, ShieldMinus, Crown, Shield, Users,
+  Flag, AlertTriangle, Clock, MicOff, Mic, UserCog, ChevronDown,
+} from 'lucide-react';
 import type { User, MessageLog, Ban as BanType } from '@/types/chat';
 
-type Section = 'logs' | 'bans' | 'users' | 'admins' | null;
+const TIMEOUT_OPTIONS = [
+  { label: '5 minutes',  value: 5 * 60 * 1000 },
+  { label: '10 minutes', value: 10 * 60 * 1000 },
+  { label: '30 minutes', value: 30 * 60 * 1000 },
+  { label: '1 hour',     value: 60 * 60 * 1000 },
+  { label: '5 hours',    value: 5 * 60 * 60 * 1000 },
+  { label: '12 hours',   value: 12 * 60 * 60 * 1000 },
+  { label: '1 day',      value: 24 * 60 * 60 * 1000 },
+  { label: '1 week',     value: 7 * 24 * 60 * 60 * 1000 },
+  { label: '1 month',    value: 30 * 24 * 60 * 60 * 1000 },
+];
+
+type Section = 'logs' | 'bans' | 'users' | 'roles' | null;
+
+interface RegUser {
+  email: string;
+  username: string;
+  role: string;
+  timedOut?: boolean;
+  timedOutUntil?: number | null;
+  voiceBanned?: boolean;
+}
 
 interface AdminPanelProps {
   user: User;
@@ -19,35 +43,37 @@ interface AdminPanelProps {
 
 export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadcast, onOpenPasswords }: AdminPanelProps) {
   const [activeSection, setActiveSection] = useState<Section>(null);
-
-  // Logs
   const [logs, setLogs] = useState<MessageLog[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [logView, setLogView] = useState<'all' | 'reported'>('all');
-
-  // Bans
   const [bans, setBans] = useState<Record<string, BanType>>({});
+  const [regUsers, setRegUsers] = useState<RegUser[]>([]);
+  const [roleIdentifier, setRoleIdentifier] = useState('');
+  const [roleLoading, setRoleLoading] = useState(false);
 
-  // Users
-  const [regUsers, setRegUsers] = useState<Array<{ email: string; username: string; role: string }>>([]);
-  const [warnTarget, setWarnTarget] = useState<{ email: string; username: string } | null>(null);
-  const [banTarget, setBanTarget] = useState<{ email: string; username: string } | null>(null);
+  // Inline action states
+  const [warnTarget, setWarnTarget] = useState<RegUser | null>(null);
+  const [banTarget, setBanTarget] = useState<RegUser | null>(null);
+  const [timeoutTarget, setTimeoutTarget] = useState<RegUser | null>(null);
+  const [timeoutDuration, setTimeoutDuration] = useState<number>(TIMEOUT_OPTIONS[0].value);
   const [actionReason, setActionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Admins
-  const [admins, setAdmins] = useState<Array<{ email: string; username: string }>>([]);
-  const [adminIdentifier, setAdminIdentifier] = useState('');
-  const [adminLoading, setAdminLoading] = useState(false);
-
   const { toast } = useToast();
   const isOwner = user.role === 'owner';
+  const sock = () => socketManager.getSocket();
+
+  const clearActions = () => { setWarnTarget(null); setBanTarget(null); setTimeoutTarget(null); setActionReason(''); };
+
+  const canActOn = (u: RegUser) => {
+    if (u.email === user.email) return false;
+    if (u.role === 'owner') return false;
+    if (u.role === 'admin' && !isOwner) return false;
+    return true;
+  };
 
   const loadLogs = async () => {
-    const [logsRes, reportsRes] = await Promise.all([
-      socketManager.getLogs(),
-      socketManager.getReports(),
-    ]);
+    const [logsRes, reportsRes] = await Promise.all([socketManager.getLogs(), socketManager.getReports()]);
     if (logsRes.ok) setLogs(logsRes.logs || []);
     if (reportsRes.ok) setReports(reportsRes.reports || []);
     setActiveSection('logs');
@@ -62,14 +88,8 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
   const loadUsers = async () => {
     const response = await socketManager.getUsers();
     if (response.ok) setRegUsers(response.users || []);
+    clearActions();
     setActiveSection('users');
-  };
-
-  const loadAdmins = () => {
-    socketManager.getSocket()?.emit('getAdmins', (response: any) => {
-      if (response.ok) setAdmins(response.admins || []);
-    });
-    setActiveSection('admins');
   };
 
   const handleUnban = async (email: string) => {
@@ -86,10 +106,9 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
     setActionLoading(false);
     if (response.ok) {
       toast({ title: 'Warning Sent', description: `${warnTarget.username} has been warned` });
-      setWarnTarget(null);
-      setActionReason('');
+      clearActions();
     } else {
-      toast({ title: 'Error', description: (response as any).message || 'Failed to warn user', variant: 'destructive' });
+      toast({ title: 'Error', description: (response as any).message || 'Failed to warn', variant: 'destructive' });
     }
   };
 
@@ -100,41 +119,85 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
     setActionLoading(false);
     if (response.ok) {
       toast({ title: 'User Banned', description: `${banTarget.username} has been banned` });
-      setBanTarget(null);
-      setActionReason('');
-      // refresh user list and bans
+      clearActions();
       loadUsers();
     } else {
-      toast({ title: 'Error', description: (response as any).message || 'Failed to ban user', variant: 'destructive' });
+      toast({ title: 'Error', description: (response as any).message || 'Failed to ban', variant: 'destructive' });
     }
   };
 
-  const handleSetAdmin = async (action: 'add' | 'remove') => {
-    if (!adminIdentifier.trim()) return;
-    setAdminLoading(true);
-    socketManager.getSocket()?.emit('setAdmin', { identifier: adminIdentifier.trim(), action }, (response: any) => {
-      setAdminLoading(false);
-      if (response.ok) {
-        setAdmins(response.admins || []);
-        setAdminIdentifier('');
-        toast({ title: action === 'add' ? 'Admin Added' : 'Admin Removed', description: action === 'add' ? `${adminIdentifier} is now an admin` : `${adminIdentifier} is no longer an admin` });
+  const handleTimeout = () => {
+    if (!timeoutTarget) return;
+    setActionLoading(true);
+    sock()?.emit('timeoutUser', { email: timeoutTarget.email, duration: timeoutDuration }, (res: any) => {
+      setActionLoading(false);
+      if (res?.ok) {
+        toast({ title: 'User Timed Out', description: `${timeoutTarget.username} timed out until ${new Date(res.until).toLocaleString()}` });
+        clearActions();
+        loadUsers();
       } else {
-        toast({ title: 'Error', description: response.message || 'Failed to update admin', variant: 'destructive' });
+        toast({ title: 'Error', description: res?.err || 'Failed to timeout', variant: 'destructive' });
       }
     });
   };
 
-  const canActOn = (targetRole: string) => {
-    if (targetRole === 'owner') return false;
-    if (targetRole === 'admin' && !isOwner) return false;
-    return true;
+  const handleRemoveTimeout = (email: string, username: string) => {
+    sock()?.emit('removeTimeout', { email }, (res: any) => {
+      if (res?.ok) {
+        toast({ title: 'Timeout Removed', description: `${username} can send messages again` });
+        loadUsers();
+      } else {
+        toast({ title: 'Error', description: res?.err || 'Failed to remove timeout', variant: 'destructive' });
+      }
+    });
   };
+
+  const handleVoiceBan = (email: string, username: string) => {
+    sock()?.emit('voiceBanUser', { email }, (res: any) => {
+      if (res?.ok) {
+        toast({ title: 'Voice Banned', description: `${username} can no longer join voice channels` });
+        loadUsers();
+      } else {
+        toast({ title: 'Error', description: res?.err || 'Failed to voice ban', variant: 'destructive' });
+      }
+    });
+  };
+
+  const handleVoiceUnban = (email: string, username: string) => {
+    sock()?.emit('voiceUnbanUser', { email }, (res: any) => {
+      if (res?.ok) {
+        toast({ title: 'Voice Unban', description: `${username} can join voice channels again` });
+        loadUsers();
+      } else {
+        toast({ title: 'Error', description: res?.err || 'Failed to voice unban', variant: 'destructive' });
+      }
+    });
+  };
+
+  const handleSetRole = (email: string, username: string, role: 'user' | 'admin' | 'owner') => {
+    setRoleLoading(true);
+    sock()?.emit('setRole', { email, role }, (res: any) => {
+      setRoleLoading(false);
+      if (res?.ok) {
+        const label = role === 'user' ? 'regular user' : role;
+        toast({ title: 'Role Updated', description: `${username} is now a ${label}` });
+        loadUsers();
+      } else {
+        toast({ title: 'Error', description: res?.err || 'Failed to update role', variant: 'destructive' });
+      }
+    });
+  };
+
+  const sortedUsers = [...regUsers].sort((a, b) => {
+    const order: Record<string, number> = { owner: 0, admin: 1, user: 2 };
+    return (order[a.role] ?? 2) - (order[b.role] ?? 2);
+  });
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
           <div className="flex items-center space-x-3">
@@ -168,91 +231,69 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                 <Button variant="ghost" className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={() => { onOpenPasswords(); onClose(); }}>
                   <Lock className="h-4 w-4 mr-2" />Passwords
                 </Button>
-                <Button variant={activeSection === 'admins' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadAdmins}>
-                  <ShieldPlus className="h-4 w-4 mr-2" />Admins
+                <Button variant={activeSection === 'roles' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadUsers}>
+                  <UserCog className="h-4 w-4 mr-2" />Role Management
                 </Button>
               </div>
             )}
           </div>
 
-          {/* Content area */}
+          {/* Content */}
           <div className="flex-1 p-4 overflow-y-auto min-h-0">
-
-            {/* Empty state */}
             {activeSection === null && (
               <div className="h-full flex items-center justify-center text-muted-foreground">
                 <p className="text-sm">Select an option from the left panel</p>
               </div>
             )}
 
-            {/* LOGS */}
+            {/* ── LOGS ── */}
             {activeSection === 'logs' && (
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-between mb-3 flex-shrink-0">
-                  <h3 className="font-semibold">
-                    {logView === 'all' ? `All Logs (${logs.length})` : `Reported Messages (${reports.length})`}
-                  </h3>
+                  <h3 className="font-semibold">{logView === 'all' ? `All Logs (${logs.length})` : `Reported (${reports.length})`}</h3>
                   <div className="flex rounded-md border border-border overflow-hidden text-xs">
-                    <button
-                      className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${logView === 'all' ? 'bg-secondary text-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
-                      onClick={() => setLogView('all')}
-                    >
+                    <button className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${logView === 'all' ? 'bg-secondary text-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setLogView('all')}>
                       <List className="h-3 w-3" />All
                     </button>
-                    <button
-                      className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors border-l border-border ${logView === 'reported' ? 'bg-secondary text-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
-                      onClick={() => setLogView('reported')}
-                    >
+                    <button className={`px-3 py-1.5 flex items-center gap-1.5 border-l border-border transition-colors ${logView === 'reported' ? 'bg-secondary text-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setLogView('reported')}>
                       <Flag className="h-3 w-3 text-red-400" />Reported
-                      {reports.length > 0 && (
-                        <span className="bg-red-500 text-white text-[10px] font-bold px-1 rounded-full leading-none">{reports.length}</span>
-                      )}
+                      {reports.length > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1 rounded-full leading-none">{reports.length}</span>}
                     </button>
                   </div>
                 </div>
-
                 <div className="flex-1 overflow-y-auto space-y-2">
-                  {logView === 'all' && (
-                    logs.length === 0
-                      ? <p className="text-sm text-muted-foreground">No logs yet</p>
-                      : logs.map((log, i) => (
-                        <div key={i} className="text-xs bg-muted rounded p-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-medium">{(log as any).username || log.email}</span>
-                            <span className="text-muted-foreground">{new Date(log.ts).toLocaleString()}</span>
-                          </div>
-                          <div className="text-muted-foreground">[{log.room}] {log.text}</div>
+                  {logView === 'all' && (logs.length === 0 ? <p className="text-sm text-muted-foreground">No logs yet</p> : logs.map((log, i) => (
+                    <div key={i} className="text-xs bg-muted rounded p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium">{(log as any).username || log.email}</span>
+                        <span className="text-muted-foreground">{new Date(log.ts).toLocaleString()}</span>
+                      </div>
+                      <div className="text-muted-foreground">[{log.room}] {log.text}</div>
+                    </div>
+                  )))}
+                  {logView === 'reported' && (reports.length === 0 ? <p className="text-sm text-muted-foreground">No reported messages yet</p> : reports.map((r: any) => (
+                    <div key={r.id} className="text-xs bg-red-500/5 border border-red-500/20 rounded p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <Flag className="h-3 w-3 text-red-400" />
+                          <span className="font-medium text-red-400">{r.reportedUsername}</span>
+                          <span className="text-muted-foreground">by {r.reporterUsername}</span>
                         </div>
-                      ))
-                  )}
-                  {logView === 'reported' && (
-                    reports.length === 0
-                      ? <p className="text-sm text-muted-foreground">No reported messages yet</p>
-                      : reports.map((report: any) => (
-                        <div key={report.id} className="text-xs bg-red-500/5 border border-red-500/20 rounded p-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5">
-                              <Flag className="h-3 w-3 text-red-400" />
-                              <span className="font-medium text-red-400">{report.reportedUsername}</span>
-                              <span className="text-muted-foreground">reported by {report.reporterUsername}</span>
-                            </div>
-                            <span className="text-muted-foreground">{new Date(report.ts).toLocaleString()}</span>
-                          </div>
-                          <div className="text-muted-foreground">[{report.room}] {report.messageText}</div>
-                        </div>
-                      ))
-                  )}
+                        <span className="text-muted-foreground">{new Date(r.ts).toLocaleString()}</span>
+                      </div>
+                      <div className="text-muted-foreground">[{r.room}] {r.messageText}</div>
+                    </div>
+                  )))}
                 </div>
               </div>
             )}
 
-            {/* BANS */}
+            {/* ── BANS ── */}
             {activeSection === 'bans' && (
               <div>
                 <h3 className="font-semibold mb-3">Banned Users ({Object.keys(bans).length})</h3>
-                {Object.keys(bans).length === 0
-                  ? <p className="text-sm text-muted-foreground">No banned users</p>
-                  : <div className="space-y-2">
+                {Object.keys(bans).length === 0 ? <p className="text-sm text-muted-foreground">No banned users</p> : (
+                  <div className="space-y-2">
                     {Object.entries(bans).map(([email, ban]) => (
                       <div key={email} className="flex items-center justify-between bg-muted rounded p-3">
                         <div>
@@ -264,148 +305,166 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                       </div>
                     ))}
                   </div>
-                }
+                )}
               </div>
             )}
 
-            {/* USER MANAGEMENT */}
+            {/* ── USER MANAGEMENT ── */}
             {activeSection === 'users' && (
               <div className="h-full flex flex-col">
                 <h3 className="font-semibold mb-3 flex-shrink-0">User Management ({regUsers.length})</h3>
 
-                {/* Inline warn confirm */}
+                {/* Warn confirm */}
                 {warnTarget && (
                   <div className="mb-4 p-3 border border-yellow-500/30 bg-yellow-500/5 rounded-lg flex-shrink-0">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="h-4 w-4 text-yellow-500" />
                       <span className="text-sm font-medium">Warn <span className="text-yellow-500">{warnTarget.username}</span></span>
                     </div>
-                    <Input
-                      value={actionReason}
-                      onChange={e => setActionReason(e.target.value)}
-                      placeholder="Reason for warning..."
-                      className="mb-2 text-sm"
-                      onKeyDown={e => e.key === 'Enter' && handleWarn()}
-                    />
+                    <Input value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="Reason for warning..." className="mb-2 text-sm" onKeyDown={e => e.key === 'Enter' && handleWarn()} />
                     <div className="flex gap-2">
-                      <Button size="sm" disabled={actionLoading || !actionReason.trim()} onClick={handleWarn} className="bg-yellow-500 hover:bg-yellow-600 text-black">
-                        Send Warning
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setWarnTarget(null); setActionReason(''); }}>Cancel</Button>
+                      <Button size="sm" disabled={actionLoading || !actionReason.trim()} onClick={handleWarn} className="bg-yellow-500 hover:bg-yellow-600 text-black">Send Warning</Button>
+                      <Button size="sm" variant="ghost" onClick={clearActions}>Cancel</Button>
                     </div>
                   </div>
                 )}
 
-                {/* Inline ban confirm */}
+                {/* Ban confirm */}
                 {banTarget && (
                   <div className="mb-4 p-3 border border-red-500/30 bg-red-500/5 rounded-lg flex-shrink-0">
                     <div className="flex items-center gap-2 mb-2">
                       <Ban className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-medium">Ban <span className="text-red-500">{banTarget.username}</span></span>
                     </div>
-                    <Input
-                      value={actionReason}
-                      onChange={e => setActionReason(e.target.value)}
-                      placeholder="Reason for ban..."
-                      className="mb-2 text-sm"
-                      onKeyDown={e => e.key === 'Enter' && handleBan()}
-                    />
+                    <Input value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="Reason for ban..." className="mb-2 text-sm" onKeyDown={e => e.key === 'Enter' && handleBan()} />
                     <div className="flex gap-2">
-                      <Button size="sm" variant="destructive" disabled={actionLoading || !actionReason.trim()} onClick={handleBan}>
-                        Confirm Ban
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setBanTarget(null); setActionReason(''); }}>Cancel</Button>
+                      <Button size="sm" variant="destructive" disabled={actionLoading || !actionReason.trim()} onClick={handleBan}>Confirm Ban</Button>
+                      <Button size="sm" variant="ghost" onClick={clearActions}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeout confirm */}
+                {timeoutTarget && (
+                  <div className="mb-4 p-3 border border-orange-500/30 bg-orange-500/5 rounded-lg flex-shrink-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm font-medium">Timeout <span className="text-orange-500">{timeoutTarget.username}</span></span>
+                    </div>
+                    <Select value={String(timeoutDuration)} onValueChange={v => setTimeoutDuration(Number(v))}>
+                      <SelectTrigger className="mb-2 text-sm">
+                        <SelectValue placeholder="Select duration..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIMEOUT_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Button size="sm" disabled={actionLoading} onClick={handleTimeout} className="bg-orange-500 hover:bg-orange-600 text-white">Apply Timeout</Button>
+                      <Button size="sm" variant="ghost" onClick={clearActions}>Cancel</Button>
                     </div>
                   </div>
                 )}
 
                 <div className="flex-1 overflow-y-auto space-y-1.5">
-                  {regUsers.length === 0
-                    ? <p className="text-sm text-muted-foreground">No users registered</p>
-                    : regUsers
-                        .sort((a, b) => {
-                          const order = { owner: 0, admin: 1, user: 2 };
-                          return (order[a.role as keyof typeof order] ?? 2) - (order[b.role as keyof typeof order] ?? 2);
-                        })
-                        .map(u => {
-                          const isSelf = u.email === user.email;
-                          const canAct = canActOn(u.role) && !isSelf;
-                          return (
-                            <div key={u.email} className="flex items-center justify-between bg-muted rounded px-3 py-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  {u.role === 'owner' && <Crown className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />}
-                                  {u.role === 'admin' && <Shield className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
-                                  <span className="text-sm font-medium truncate">{u.username}</span>
-                                  {isSelf && <span className="text-xs text-muted-foreground">(you)</span>}
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate">{u.email}</div>
-                              </div>
-                              {canAct && (
-                                <div className="flex gap-1.5 flex-shrink-0 ml-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs border-yellow-500/40 text-yellow-600 hover:bg-yellow-500/10"
-                                    onClick={() => { setWarnTarget({ email: u.email, username: u.username }); setBanTarget(null); setActionReason(''); }}
-                                  >
-                                    <AlertTriangle className="h-3 w-3 mr-1" />Warn
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs border-red-500/40 text-red-600 hover:bg-red-500/10"
-                                    onClick={() => { setBanTarget({ email: u.email, username: u.username }); setWarnTarget(null); setActionReason(''); }}
-                                  >
-                                    <Ban className="h-3 w-3 mr-1" />Ban
-                                  </Button>
-                                </div>
+                  {regUsers.length === 0 ? <p className="text-sm text-muted-foreground">No users registered</p> : sortedUsers.map(u => {
+                    const canAct = canActOn(u);
+                    const isSelf = u.email === user.email;
+                    return (
+                      <div key={u.email} className={`bg-muted rounded px-3 py-2 border-l-2 ${u.timedOut ? 'border-orange-500' : u.voiceBanned ? 'border-purple-500' : 'border-transparent'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          {/* User info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {u.role === 'owner' && <Crown className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />}
+                              {u.role === 'admin' && <Shield className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
+                              <span className="text-sm font-medium">{u.username}</span>
+                              {isSelf && <span className="text-xs text-muted-foreground">(you)</span>}
+                              {u.timedOut && u.timedOutUntil && (
+                                <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full font-medium" title={`Until ${new Date(u.timedOutUntil).toLocaleString()}`}>
+                                  TIMED OUT
+                                </span>
+                              )}
+                              {u.voiceBanned && (
+                                <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full font-medium">
+                                  VC BANNED
+                                </span>
                               )}
                             </div>
-                          );
-                        })
-                  }
-                </div>
-              </div>
-            )}
-
-            {/* ADMINS (owner only) */}
-            {activeSection === 'admins' && isOwner && (
-              <div>
-                <h3 className="font-semibold mb-3">Admin Management</h3>
-                <div className="bg-muted rounded-lg p-4 mb-4 space-y-3">
-                  <Label>Email or Username</Label>
-                  <Input value={adminIdentifier} onChange={e => setAdminIdentifier(e.target.value)} placeholder="Enter email or username..." />
-                  <div className="flex space-x-2">
-                    <Button className="flex-1" size="sm" disabled={adminLoading || !adminIdentifier.trim()} onClick={() => handleSetAdmin('add')}>
-                      <ShieldPlus className="h-4 w-4 mr-2" />Give Admin
-                    </Button>
-                    <Button className="flex-1" size="sm" variant="destructive" disabled={adminLoading || !adminIdentifier.trim()} onClick={() => handleSetAdmin('remove')}>
-                      <ShieldMinus className="h-4 w-4 mr-2" />Remove Admin
-                    </Button>
-                  </div>
-                </div>
-                <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Current Admins</h4>
-                {admins.length === 0
-                  ? <p className="text-sm text-muted-foreground">No admins yet</p>
-                  : <div className="space-y-2">
-                    {admins.map(admin => (
-                      <div key={admin.email} className="flex items-center justify-between bg-muted rounded p-3">
-                        <div>
-                          <div className="text-sm font-medium flex items-center space-x-2">
-                            <Shield className="h-3 w-3 text-red-500" />
-                            <span>{admin.username}</span>
+                            <div className="text-xs text-muted-foreground truncate">{u.email}</div>
                           </div>
-                          <div className="text-xs text-muted-foreground">{admin.email}</div>
+
+                          {/* Action buttons */}
+                          {canAct && (
+                            <div className="flex flex-wrap gap-1 flex-shrink-0 justify-end">
+                              <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-yellow-500/40 text-yellow-600 hover:bg-yellow-500/10"
+                                onClick={() => { clearActions(); setWarnTarget(u); }}>
+                                <AlertTriangle className="h-2.5 w-2.5 mr-1" />Warn
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-red-500/40 text-red-600 hover:bg-red-500/10"
+                                onClick={() => { clearActions(); setBanTarget(u); }}>
+                                <Ban className="h-2.5 w-2.5 mr-1" />Ban
+                              </Button>
+                              {u.timedOut ? (
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-orange-500/40 text-orange-500 hover:bg-orange-500/10"
+                                  onClick={() => handleRemoveTimeout(u.email, u.username)}>
+                                  <Clock className="h-2.5 w-2.5 mr-1" />Untimeout
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-orange-500/40 text-orange-500 hover:bg-orange-500/10"
+                                  onClick={() => { clearActions(); setTimeoutTarget(u); setTimeoutDuration(TIMEOUT_OPTIONS[0].value); }}>
+                                  <Clock className="h-2.5 w-2.5 mr-1" />Timeout
+                                </Button>
+                              )}
+                              {u.voiceBanned ? (
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-purple-500/40 text-purple-500 hover:bg-purple-500/10"
+                                  onClick={() => handleVoiceUnban(u.email, u.username)}>
+                                  <Mic className="h-2.5 w-2.5 mr-1" />VC Unban
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-purple-500/40 text-purple-500 hover:bg-purple-500/10"
+                                  onClick={() => handleVoiceBan(u.email, u.username)}>
+                                  <MicOff className="h-2.5 w-2.5 mr-1" />VC Ban
+                                </Button>
+                              )}
+                              {/* Role buttons (owner only) */}
+                              {isOwner && (
+                                <>
+                                  {u.role !== 'admin' && (
+                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
+                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'admin')}>
+                                      <ShieldPlus className="h-2.5 w-2.5 mr-1" />Make Admin
+                                    </Button>
+                                  )}
+                                  {u.role === 'admin' && (
+                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
+                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'user')}>
+                                      <ShieldMinus className="h-2.5 w-2.5 mr-1" />Remove Admin
+                                    </Button>
+                                  )}
+                                  {u.role !== 'owner' && (
+                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10"
+                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'owner')}>
+                                      <Crown className="h-2.5 w-2.5 mr-1" />Make Owner
+                                    </Button>
+                                  )}
+                                  {u.role === 'owner' && (
+                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10"
+                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'user')}>
+                                      <Crown className="h-2.5 w-2.5 mr-1" />Remove Owner
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <Button size="sm" variant="outline" className="text-red-500 border-red-500/30 hover:bg-red-500/10"
-                          onClick={() => { setAdminIdentifier(admin.email); handleSetAdmin('remove'); }}>
-                          Remove
-                        </Button>
                       </div>
-                    ))}
-                  </div>
-                }
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

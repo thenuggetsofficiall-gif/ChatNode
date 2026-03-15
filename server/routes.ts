@@ -77,6 +77,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Track connected sockets by email for real-time DM delivery
   const connectedByEmail: Record<string, Set<string>> = {};
 
+  // Timeouts — in-memory (reset on server restart; fine for moderation)
+  const timeouts: Record<string, { until: number; by: string }> = {};
+
+  // Voice bans — persisted
+  let voiceBans: string[] = loadJSON('voice_bans.json', []);
+  const isVoiceBanned = (email: string) => voiceBans.includes(email.toLowerCase());
+  const isTimedOut = (email: string) => { const t = timeouts[email]; return t ? Date.now() < t.until : false; };
+
   // Voice channels — in-memory (reset on server restart, users reconnect)
   const VOICE_CHANNELS = ['General', 'Gaming', 'Music'] as const;
   const MAX_VOICE = 50;
@@ -100,6 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveJSON('warnings.json', warnings);
     saveJSON('bans.json', bans);
     saveJSON('owners.json', ownerList);
+    saveJSON('voice_bans.json', voiceBans);
     saveJSON('admins.json', adminList);
     saveJSON('broadcast.json', currentBroadcast);
     saveJSON('dismissals.json', userDismissals);
@@ -366,6 +375,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = (socket as any).data.user;
       if (!user) return cb && cb({ ok: false, err: 'not-authed' });
       if (bans[user.email]) return cb && cb({ ok: false, err: 'banned' });
+      if (isTimedOut(user.email)) {
+        const t = timeouts[user.email];
+        return cb && cb({ ok: false, err: 'timed-out', until: t.until });
+      }
 
       // Ensure user has acknowledged warnings? We block sending if there's unacked warnings
       // But first, filter out expired warnings (older than 1 hour)
@@ -515,12 +528,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     socket.on('getUsers', (cb) => {
       const user = (socket as any).data.user;
       if (!user || (user.role !== 'admin' && user.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const now = Date.now();
       const allUsers = Object.values(usersByEmail).map((u: any) => ({
         email: u.email,
         username: u.username,
         role: getUserRole(u.email),
+        timedOut: isTimedOut(u.email),
+        timedOutUntil: timeouts[u.email] && now < timeouts[u.email].until ? timeouts[u.email].until : null,
+        voiceBanned: isVoiceBanned(u.email),
       }));
       cb && cb({ ok: true, users: allUsers });
+    });
+
+    // ── Timeout ────────────────────────────────────────────────
+    socket.on('timeoutUser', (data: { email: string; duration: number }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      if (!targetEmail || !data?.duration) return cb && cb({ ok: false, err: 'bad-data' });
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') return cb && cb({ ok: false, err: 'cannot-timeout-owner' });
+      if (targetRole === 'admin' && actor.role !== 'owner') return cb && cb({ ok: false, err: 'cannot-timeout-admin' });
+      const until = Date.now() + data.duration;
+      timeouts[targetEmail] = { until, by: actor.email };
+      // Notify target if connected
+      for (const s of Array.from(io.of('/').sockets.values())) {
+        if ((s as any).data.user?.email === targetEmail) {
+          s.emit('timedOut', { until, by: actor.username });
+        }
+      }
+      cb && cb({ ok: true, until });
+    });
+
+    socket.on('removeTimeout', (data: { email: string }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      delete timeouts[targetEmail];
+      for (const s of Array.from(io.of('/').sockets.values())) {
+        if ((s as any).data.user?.email === targetEmail) {
+          s.emit('timeoutRemoved');
+        }
+      }
+      cb && cb({ ok: true });
+    });
+
+    // ── Voice Ban ──────────────────────────────────────────────
+    socket.on('voiceBanUser', (data: { email: string }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      const targetRole = getUserRole(targetEmail);
+      if (targetRole === 'owner') return cb && cb({ ok: false, err: 'cannot-vban-owner' });
+      if (targetRole === 'admin' && actor.role !== 'owner') return cb && cb({ ok: false, err: 'cannot-vban-admin' });
+      if (!voiceBans.includes(targetEmail)) voiceBans.push(targetEmail);
+      // Kick from VC if currently in one
+      removeFromVoice(targetEmail, '');
+      broadcastVoiceState();
+      for (const s of Array.from(io.of('/').sockets.values())) {
+        if ((s as any).data.user?.email === targetEmail) {
+          s.emit('voiceKicked', { reason: 'You have been voice banned' });
+        }
+      }
+      saveAll();
+      cb && cb({ ok: true });
+    });
+
+    socket.on('voiceUnbanUser', (data: { email: string }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || (actor.role !== 'admin' && actor.role !== 'owner')) return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      voiceBans = voiceBans.filter(e => e !== targetEmail);
+      saveAll();
+      cb && cb({ ok: true });
+    });
+
+    // ── Role Management (owner only) ────────────────────────────
+    socket.on('setRole', (data: { email: string; role: 'user' | 'admin' | 'owner' }, cb) => {
+      const actor = (socket as any).data.user;
+      if (!actor || actor.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      const targetEmail = (data?.email || '').toLowerCase();
+      const newRole = data?.role;
+      if (!['user', 'admin', 'owner'].includes(newRole)) return cb && cb({ ok: false, err: 'bad-role' });
+      if (targetEmail === actor.email) return cb && cb({ ok: false, err: 'cannot-change-self' });
+
+      // Update admin list
+      if (newRole === 'admin') {
+        if (!adminList.includes(targetEmail)) adminList.push(targetEmail);
+        ownerList = ownerList.filter((e: string) => e !== targetEmail);
+      } else if (newRole === 'owner') {
+        if (!ownerList.includes(targetEmail)) ownerList.push(targetEmail);
+        adminList = adminList.filter((e: string) => e !== targetEmail);
+      } else {
+        // 'user'
+        adminList = adminList.filter((e: string) => e !== targetEmail);
+        ownerList = ownerList.filter((e: string) => e !== targetEmail);
+      }
+      saveAll();
+
+      // Update the connected user's live session role
+      for (const s of Array.from(io.of('/').sockets.values())) {
+        if ((s as any).data.user?.email === targetEmail) {
+          (s as any).data.user.role = newRole;
+          s.emit('roleChanged', { role: newRole });
+        }
+      }
+      cb && cb({ ok: true });
     });
 
     // Report a message
@@ -571,13 +684,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     // ── Voice Channels ───────────────────────────────────────────
-    const removeFromVoice = (emailToRemove: string, removedSocketId: string) => {
+    const removeFromVoice = (emailToRemove: string, removedSocketId?: string) => {
       for (const ch of VOICE_CHANNELS) {
         const idx = voiceChannels[ch].findIndex(m => m.email === emailToRemove);
         if (idx !== -1) {
-          voiceChannels[ch].splice(idx, 1);
+          const [removed] = voiceChannels[ch].splice(idx, 1);
+          const sid = removedSocketId || removed.socketId;
           for (const member of voiceChannels[ch]) {
-            io.to(member.socketId).emit('voicePeerLeft', { socketId: removedSocketId, email: emailToRemove });
+            io.to(member.socketId).emit('voicePeerLeft', { socketId: sid, email: emailToRemove });
           }
           break;
         }
@@ -595,6 +709,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     socket.on('joinVoiceChannel', (data: { channelId: string }, cb) => {
       const user = (socket as any).data.user;
       if (!user) return cb && cb({ ok: false, err: 'not-authed' });
+      if (isVoiceBanned(user.email)) return cb && cb({ ok: false, err: 'voice-banned' });
+      if (isTimedOut(user.email)) return cb && cb({ ok: false, err: 'timed-out', until: timeouts[user.email].until });
       const channelId = data?.channelId;
       if (!VOICE_CHANNELS.includes(channelId as any)) return cb && cb({ ok: false, err: 'bad-channel' });
       const channel = voiceChannels[channelId];
