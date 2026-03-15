@@ -92,6 +92,12 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
     setActiveSection('users');
   };
 
+  const loadRoles = async () => {
+    const response = await socketManager.getUsers();
+    if (response.ok) setRegUsers(response.users || []);
+    setActiveSection('roles');
+  };
+
   const handleUnban = async (email: string) => {
     await socketManager.unbanUser(email);
     const response = await socketManager.getBans();
@@ -231,7 +237,7 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                 <Button variant="ghost" className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={() => { onOpenPasswords(); onClose(); }}>
                   <Lock className="h-4 w-4 mr-2" />Passwords
                 </Button>
-                <Button variant={activeSection === 'roles' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadUsers}>
+                <Button variant={activeSection === 'roles' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadRoles}>
                   <UserCog className="h-4 w-4 mr-2" />Role Management
                 </Button>
               </div>
@@ -429,38 +435,63 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                                   <MicOff className="h-2.5 w-2.5 mr-1" />VC Ban
                                 </Button>
                               )}
-                              {/* Role buttons (owner only) */}
-                              {isOwner && (
-                                <>
-                                  {u.role !== 'admin' && (
-                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
-                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'admin')}>
-                                      <ShieldPlus className="h-2.5 w-2.5 mr-1" />Make Admin
-                                    </Button>
-                                  )}
-                                  {u.role === 'admin' && (
-                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
-                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'user')}>
-                                      <ShieldMinus className="h-2.5 w-2.5 mr-1" />Remove Admin
-                                    </Button>
-                                  )}
-                                  {u.role !== 'owner' && (
-                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10"
-                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'owner')}>
-                                      <Crown className="h-2.5 w-2.5 mr-1" />Make Owner
-                                    </Button>
-                                  )}
-                                  {u.role === 'owner' && (
-                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10"
-                                      disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'user')}>
-                                      <Crown className="h-2.5 w-2.5 mr-1" />Remove Owner
-                                    </Button>
-                                  )}
-                                </>
-                              )}
                             </div>
                           )}
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* ── ROLE MANAGEMENT ── */}
+            {activeSection === 'roles' && (
+              <div className="h-full flex flex-col">
+                <h3 className="font-semibold mb-1 flex-shrink-0">Role Management ({regUsers.length})</h3>
+                <p className="text-xs text-muted-foreground mb-3 flex-shrink-0">Assign or remove admin and owner roles. Owners cannot be demoted by other owners except yourself.</p>
+                <div className="flex-1 overflow-y-auto space-y-1.5">
+                  {sortedUsers.map(u => {
+                    const isSelf = u.email === user.email;
+                    const isTargetOwner = u.role === 'owner';
+                    const canChangeRole = !isSelf && !isTargetOwner;
+                    return (
+                      <div key={u.email} className={`bg-muted rounded px-3 py-2.5 flex items-center justify-between gap-2 border-l-2 ${u.role === 'owner' ? 'border-yellow-500' : u.role === 'admin' ? 'border-red-500' : 'border-transparent'}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {u.role === 'owner' && <Crown className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />}
+                            {u.role === 'admin' && <Shield className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
+                            <span className="text-sm font-medium">{u.username}</span>
+                            {isSelf && <span className="text-xs text-muted-foreground">(you)</span>}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${u.role === 'owner' ? 'bg-yellow-500/20 text-yellow-400' : u.role === 'admin' ? 'bg-red-500/20 text-red-400' : 'bg-muted-foreground/20 text-muted-foreground'}`}>
+                              {u.role}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                        </div>
+                        {canChangeRole && (
+                          <div className="flex flex-wrap gap-1 flex-shrink-0 justify-end">
+                            {u.role === 'admin' ? (
+                              <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
+                                disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'user')}>
+                                <ShieldMinus className="h-3 w-3 mr-1" />Remove Admin
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11px] border-red-500/40 text-red-500 hover:bg-red-500/10"
+                                disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'admin')}>
+                                <ShieldPlus className="h-3 w-3 mr-1" />Make Admin
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11px] border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10"
+                              disabled={roleLoading} onClick={() => handleSetRole(u.email, u.username, 'owner')}>
+                              <Crown className="h-3 w-3 mr-1" />Make Owner
+                            </Button>
+                          </div>
+                        )}
+                        {(isSelf || isTargetOwner) && (
+                          <span className="text-[11px] text-muted-foreground italic flex-shrink-0">
+                            {isSelf ? 'Cannot change self' : 'Protected'}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
