@@ -113,12 +113,20 @@ export function useVoice(socketManager: any, userEmail: string) {
       const audio = document.createElement('audio');
       audio.dataset.peer = socketId;
       audio.autoplay = true;
+      (audio as any).playsInline = true;
       audio.srcObject = stream;
       audio.muted = deafenedRef.current;
       if (speakerRef.current && 'setSinkId' in audio) {
         (audio as any).setSinkId(speakerRef.current).catch(() => {});
       }
       container.appendChild(audio);
+      // Explicitly call play() — autoplay attr alone is blocked by browser policy
+      // when the ontrack fires asynchronously outside the user-gesture chain
+      audio.play().catch(() => {
+        // If blocked, retry on next user interaction
+        const retry = () => { audio.play().catch(() => {}); document.removeEventListener('click', retry); };
+        document.addEventListener('click', retry, { once: true });
+      });
     };
 
     peersRef.current.set(socketId, pc);

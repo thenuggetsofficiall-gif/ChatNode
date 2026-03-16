@@ -100,6 +100,7 @@ export function useSocket() {
     const res = await socketManager.sendMessage(currentRoom, text, replyTo);
     if (!res.ok) {
       if ((res as any).err === 'timed-out') throw new Error(`You are timed out until ${new Date((res as any).until).toLocaleTimeString()}`);
+      if ((res as any).err === 'banned-word') throw new Error('Your message was removed — it contained a banned slur and has been auto-reported.');
       throw new Error((res as any).err || 'Failed to send message');
     }
     return res;

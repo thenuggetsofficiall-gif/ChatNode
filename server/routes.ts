@@ -88,6 +88,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   let emailBlacklist: string[] = loadJSON('email_blackout.json', []);
   const isEmailBlacklisted = (email: string) => emailBlacklist.includes(email.toLowerCase());
   const HIDDEN_EMAIL = '[hidden]';
+
+  // Banned words — auto-delete message and auto-report
+  const BANNED_WORDS = [
+    'nigger','nigga','faggot','cracker','chink','spic','kike','wetback',
+    'gook','beaner','tranny','retard','dyke','coon','towelhead','raghead',
+    'zipperhead','porch monkey','jungle bunny','spook','cripple','mongoloid',
+  ];
+  const containsBannedWord = (text: string): string | null => {
+    const lower = text.toLowerCase().replace(/[^a-z\s]/g, '');
+    for (const w of BANNED_WORDS) { if (lower.includes(w)) return w; }
+    return null;
+  };
   const isTimedOut = (email: string) => { const t = timeouts[email]; return t ? Date.now() < t.until : false; };
 
   // Voice channels — in-memory (reset on server restart, users reconnect)
@@ -404,6 +416,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const room = payload.room || 'General';
       const text = String(payload.text || '').trim();
       if (!text) return cb && cb({ ok: false, err: 'empty' });
+
+      // Banned word check — block, auto-report, do NOT broadcast
+      const bannedWord = containsBannedWord(text);
+      if (bannedWord) {
+        const report = {
+          id: `auto-${Date.now()}`,
+          reporterEmail: 'automod',
+          reporterUsername: 'AutoMod',
+          reportedEmail: user.email,
+          reportedUsername: user.username,
+          messageText: text,
+          room,
+          ts: Date.now(),
+          reason: `Banned slur detected`,
+          autoReported: true,
+        };
+        reports.push(report);
+        if (reports.length > 1000) reports.splice(0, reports.length - 1000);
+        saveAll();
+        return cb && cb({ ok: false, err: 'banned-word' });
+      }
 
       const display = (user.role === 'owner') ? `${user.username} [OWNER]` : (user.role === 'admin') ? `${user.username} [ADMIN]` : user.username;
       const replyTo = payload.replyTo ? {
