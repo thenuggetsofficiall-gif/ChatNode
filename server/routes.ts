@@ -92,8 +92,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Banned words — auto-delete message and auto-report
   const BANNED_WORDS = [
     'nigger','nigga','faggot','cracker','chink','spic','kike','wetback',
-    'gook','beaner','tranny','retard','dyke','coon','towelhead','raghead',
-    'zipperhead','porch monkey','jungle bunny','spook','cripple','mongoloid',
+    'gook','beaner','tranny','dyke','coon','towelhead','raghead',
+    'zipperhead','porch monkey','jungle bunny','spook','cripple','mongoloid','67', 
+    'fag', 'nig','sixseven','67','6-7','67','67','67','67',
   ];
   const containsBannedWord = (text: string): string | null => {
     const lower = text.toLowerCase().replace(/[^a-z\s]/g, '');

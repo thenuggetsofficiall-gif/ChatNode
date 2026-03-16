@@ -36,5 +36,11 @@
     "role": "admin",
     "password": "Butcher37",
     "profileImageUrl": ""
+  },
+  "sebastianrizz@gmail.com": {
+    "username": "101111",
+    "email": "sebastianrizz@gmail.com",
+    "role": "user",
+    "password": "Butcher37"
   }
 }
