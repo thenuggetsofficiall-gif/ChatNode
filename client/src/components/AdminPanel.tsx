@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import {
   X, List, Ban, Megaphone, Lock, ShieldPlus, ShieldMinus, Crown, Shield, Users,
-  Flag, AlertTriangle, Clock, MicOff, Mic, UserCog, ChevronDown, EyeOff, Eye,
+  Flag, AlertTriangle, Clock, MicOff, Mic, UserCog, ChevronDown, EyeOff, Eye, Monitor,
 } from 'lucide-react';
 import type { User, MessageLog, Ban as BanType } from '@/types/chat';
 
@@ -21,7 +21,7 @@ const TIMEOUT_OPTIONS = [
   { label: '1 month',    value: 30 * 24 * 60 * 60 * 1000 },
 ];
 
-type Section = 'logs' | 'bans' | 'users' | 'roles' | 'blackout' | null;
+type Section = 'logs' | 'bans' | 'users' | 'roles' | 'blackout' | 'userinfo' | null;
 
 interface RegUser {
   email: string;
@@ -52,6 +52,7 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
   const [roleLoading, setRoleLoading] = useState(false);
   const [blacklist, setBlacklist] = useState<string[]>([]);
   const [blackoutLoading, setBlackoutLoading] = useState(false);
+  const [userInfoData, setUserInfoData] = useState<any[]>([]);
 
   // Inline action states
   const [warnTarget, setWarnTarget] = useState<RegUser | null>(null);
@@ -105,6 +106,12 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
     if (blRes.ok) setBlacklist(blRes.blacklist || []);
     if (usersRes.ok) setRegUsers(usersRes.users || []);
     setActiveSection('blackout');
+  };
+
+  const loadUserInfo = async () => {
+    const res = await socketManager.getUserInfo();
+    if (res.ok) setUserInfoData(res.users || []);
+    setActiveSection('userinfo');
   };
 
   const handleAddBlacklist = async (email: string) => {
@@ -275,6 +282,9 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                 </Button>
                 <Button variant={activeSection === 'blackout' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadBlacklist}>
                   <EyeOff className="h-4 w-4 mr-2" />Email Blackout
+                </Button>
+                <Button variant={activeSection === 'userinfo' ? 'secondary' : 'ghost'} className="w-full justify-start text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10" onClick={loadUserInfo}>
+                  <Monitor className="h-4 w-4 mr-2" />User Info
                 </Button>
               </div>
             )}
@@ -580,6 +590,64 @@ export function AdminPanel({ user, isOpen, onClose, socketManager, onOpenBroadca
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* ── USER INFO ── */}
+            {activeSection === 'userinfo' && (
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                  <h3 className="font-semibold">User Info ({userInfoData.length})</h3>
+                  <Button size="sm" variant="outline" onClick={loadUserInfo}>Refresh</Button>
+                </div>
+                {userInfoData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No user data collected yet. Users appear here after they log in.</p>
+                ) : (
+                  <div className="space-y-3 overflow-y-auto">
+                    {userInfoData.map((u) => (
+                      <div key={u.email} className="bg-muted rounded-lg p-3 border border-border text-xs space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-semibold text-sm">{u.username}</span>
+                          <span className="text-muted-foreground">{u.email}</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-1 font-mono">
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">IP Address</span>
+                            <span className="text-yellow-400 font-semibold select-text">{u.ip}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Platform</span>
+                            <span className="select-text">{u.platform}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Language</span>
+                            <span className="select-text">{u.language}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Screen</span>
+                            <span className="select-text">{u.screenWidth && u.screenHeight ? `${u.screenWidth}×${u.screenHeight}` : 'Unknown'}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Timezone</span>
+                            <span className="select-text">{u.timezone}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Browser</span>
+                            <span className="select-text break-all text-[10px] leading-tight">{u.userAgent}</span>
+                          </div>
+                          <div className="flex gap-2 pt-1 border-t border-border mt-1">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">First seen</span>
+                            <span>{new Date(u.firstSeen).toLocaleString()}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-24 flex-shrink-0">Last seen</span>
+                            <span>{new Date(u.lastSeen).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

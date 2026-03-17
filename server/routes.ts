@@ -89,6 +89,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const isEmailBlacklisted = (email: string) => emailBlacklist.includes(email.toLowerCase());
   const HIDDEN_EMAIL = '[hidden]';
 
+  // User info store — captures IP, user-agent, and browser details per email
+  interface UserInfoEntry {
+    email: string;
+    username: string;
+    ip: string;
+    userAgent: string;
+    platform: string;
+    language: string;
+    screenWidth: number;
+    screenHeight: number;
+    timezone: string;
+    firstSeen: number;
+    lastSeen: number;
+  }
+  const userInfoStore: Record<string, UserInfoEntry> = {};
+
   // Banned words — auto-delete message and auto-report
   const BANNED_WORDS = [
     'nigger','nigga','faggot','cracker','chink','spic','kike','wetback',
@@ -338,6 +354,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // attach to socket
         (socket as any).data.user = user;
+
+        // Capture IP and user-agent for owner's User Info panel
+        const rawIp = (socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address || '');
+        const ip = rawIp.split(',')[0].trim() || 'Unknown';
+        const userAgent = socket.handshake.headers['user-agent'] || 'Unknown';
+        const joinTs = Date.now();
+        const existing = userInfoStore[email];
+        userInfoStore[email] = {
+          email,
+          username: user.username,
+          ip,
+          userAgent,
+          platform: existing?.platform || 'Unknown',
+          language: existing?.language || 'Unknown',
+          screenWidth: existing?.screenWidth || 0,
+          screenHeight: existing?.screenHeight || 0,
+          timezone: existing?.timezone || 'Unknown',
+          firstSeen: existing?.firstSeen || joinTs,
+          lastSeen: joinTs,
+        };
 
         // Track connected socket by email for DM delivery
         if (!connectedByEmail[email]) connectedByEmail[email] = new Set();
@@ -716,6 +752,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       emailBlacklist = emailBlacklist.filter(e => e !== target);
       saveAll();
       cb && cb({ ok: true });
+    });
+
+    // Client sends additional browser/device details after login
+    socket.on('clientInfo', (data: { platform: string; language: string; screenWidth: number; screenHeight: number; timezone: string }) => {
+      const user = (socket as any).data.user;
+      if (!user) return;
+      const email = user.email.toLowerCase();
+      if (userInfoStore[email]) {
+        userInfoStore[email].platform = data?.platform || 'Unknown';
+        userInfoStore[email].language = data?.language || 'Unknown';
+        userInfoStore[email].screenWidth = data?.screenWidth || 0;
+        userInfoStore[email].screenHeight = data?.screenHeight || 0;
+        userInfoStore[email].timezone = data?.timezone || 'Unknown';
+        userInfoStore[email].lastSeen = Date.now();
+      }
+    });
+
+    // Owner-only: get all collected user info
+    socket.on('getUserInfo', (cb) => {
+      const user = (socket as any).data.user;
+      if (!user || user.role !== 'owner') return cb && cb({ ok: false, err: 'no-perm' });
+      const entries = Object.values(userInfoStore).sort((a, b) => b.lastSeen - a.lastSeen);
+      cb && cb({ ok: true, users: entries });
     });
 
     // Report a message

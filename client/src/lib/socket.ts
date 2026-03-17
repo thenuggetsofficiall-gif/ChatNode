@@ -215,6 +215,18 @@ class SocketManager {
     });
   }
 
+  sendClientInfo(info: { platform: string; language: string; screenWidth: number; screenHeight: number; timezone: string }) {
+    this.socket?.emit('clientInfo', info);
+  }
+
+  getUserInfo(): Promise<SocketResponse> {
+    return new Promise((resolve) => {
+      this.socket?.emit('getUserInfo', (response: SocketResponse) => {
+        resolve(response);
+      });
+    });
+  }
+
   // Event listeners
   onMessage(callback: (data: { room: string; msg: Message }) => void) {
     this.socket?.on('message', callback);

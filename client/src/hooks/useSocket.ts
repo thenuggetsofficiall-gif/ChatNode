@@ -90,6 +90,14 @@ export function useSocket() {
       userEmailRef.current = response.user.email;
       if (response.rooms) setRooms(response.rooms);
       console.log('✅ User authenticated and loaded:', response.user);
+      // Send browser/device fingerprint to server for owner's User Info panel
+      socketManager.sendClientInfo({
+        platform: navigator.platform || 'Unknown',
+        language: navigator.language || 'Unknown',
+        screenWidth: screen.width || 0,
+        screenHeight: screen.height || 0,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
+      });
     }
     return response;
   };
