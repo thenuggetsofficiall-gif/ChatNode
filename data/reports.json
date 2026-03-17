@@ -510,5 +510,17 @@
     "ts": 1773692779587,
     "reason": "Banned slur detected",
     "autoReported": true
+  },
+  {
+    "id": "auto-1773781903911",
+    "reporterEmail": "automod",
+    "reporterUsername": "AutoMod",
+    "reportedEmail": "uwu@realahahah",
+    "reportedUsername": "SpiikedShawn",
+    "messageText": "nigger",
+    "room": "General",
+    "ts": 1773781903911,
+    "reason": "Banned slur detected",
+    "autoReported": true
   }
 ]
